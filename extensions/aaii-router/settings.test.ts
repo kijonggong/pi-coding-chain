@@ -1,0 +1,256 @@
+/**
+ * Tests for the router settings.
+ *
+ * Run with:
+ *   node --test extensions/aaii-router/settings.test.ts
+ *
+ * The file-level tests work on throwaway copies in the system temp directory.
+ * Nothing here touches `~/.pi/agent/aaii-router.json`.
+ */
+
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import {
+  DEFAULT_COOLDOWN_MS,
+  DEFAULT_SETTINGS,
+  PROJECT_KEYS,
+  SETTINGS,
+  SUBCOMMANDS,
+  completionsFor,
+  describeSettings,
+  editSetting,
+  loadSettings,
+  milliseconds,
+  parseDuration,
+  parseList,
+  parseOrigins,
+  parseSettings,
+  parseToggle,
+  readSettingsFile,
+  resolveSettings,
+  saveSettings,
+  serializeSettings,
+} from "./settings.ts";
+
+test("a fresh install has every setting at its default", () => {
+  assert.deepEqual(resolveSettings({}), { settings: DEFAULT_SETTINGS, notes: [], applied: [] });
+  assert.equal(DEFAULT_SETTINGS.cooldownMs, DEFAULT_COOLDOWN_MS);
+  assert.deepEqual(DEFAULT_SETTINGS.excludedOrigins, ["http://127.0.0.1:4000"]);
+  assert.deepEqual(DEFAULT_SETTINGS.excludedProviders, []);
+});
+
+test("reads a duration in the units an operator would write", () => {
+  assert.equal(parseDuration("300000"), 300_000);
+  assert.equal(parseDuration("300s"), 300_000);
+  assert.equal(parseDuration("5m"), 300_000);
+  assert.equal(parseDuration("1h"), 3_600_000);
+  assert.equal(parseDuration("2m30s"), undefined, "one unit per value");
+  assert.equal(parseDuration("off"), 0);
+  assert.equal(parseDuration("0"), 0);
+  assert.equal(parseDuration("-5m"), undefined);
+  assert.equal(parseDuration("soon"), undefined);
+  assert.equal(parseDuration(""), undefined);
+});
+
+test("reads a toggle the way a settings file would spell it", () => {
+  for (const on of ["on", "true", "yes", "1", "ON"]) assert.equal(parseToggle(on), true, on);
+  for (const off of ["off", "false", "no", "0", " Off "]) assert.equal(parseToggle(off), false, off);
+  assert.equal(parseToggle("maybe"), undefined);
+  assert.equal(parseToggle(""), undefined);
+});
+
+test("normalizes an origin and refuses what is not one", () => {
+  assert.deepEqual(parseOrigins("https://api.example.com/v1").origins, ["https://api.example.com"]);
+  assert.deepEqual(parseOrigins("https://a.example.com, https://b.example.com").origins, [
+    "https://a.example.com",
+    "https://b.example.com",
+  ]);
+  assert.deepEqual(parseOrigins("https://a.example.com, https://a.example.com").origins, ["https://a.example.com"]);
+  assert.deepEqual(parseOrigins("").origins, [], "an empty list is a list, not an error");
+  assert.deepEqual(parseOrigins("ftp://files.example.com").origins, undefined);
+  assert.deepEqual(parseOrigins("not a url").rejected, ["not a url"]);
+  assert.deepEqual(parseList(" openrouter, cline ,, openrouter "), ["openrouter", "cline"]);
+});
+
+test("validates one setting at a time, so the wizard can refuse a typo", () => {
+  const cooldown = editSetting(DEFAULT_SETTINGS, "cooldown", "2m");
+  assert.equal(cooldown.ok, true);
+  assert.equal(cooldown.ok && cooldown.settings.cooldownMs, 120_000);
+
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "cooldown", "soon"), {
+    ok: false,
+    reason: "not a duration: soon",
+  });
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "status", "maybe"), {
+    ok: false,
+    reason: "expected on or off, got: maybe",
+  });
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "origins", "ftp://x"), {
+    ok: false,
+    reason: "not an http(s) origin: ftp://x",
+  });
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "providers", "open router"), {
+    ok: false,
+    reason: "not a provider id: open router",
+  });
+
+  const vision = editSetting(DEFAULT_SETTINGS, "vision", "off");
+  assert.equal(vision.ok && vision.settings.preferVision, false);
+  const providers = editSetting(DEFAULT_SETTINGS, "providers", "openrouter, litellm");
+  assert.deepEqual(providers.ok && providers.settings.excludedProviders, ["openrouter", "litellm"]);
+  // The settings that were not named are not disturbed.
+  assert.equal(providers.ok && providers.settings.cooldownMs, DEFAULT_COOLDOWN_MS);
+});
+
+test("reports what a file said that could not be used instead of guessing", () => {
+  const parsed = parseSettings(
+    JSON.stringify({
+      cooldown: "5m",
+      vision: false,
+      status: "on",
+      providers: ["openrouter"],
+      mystery: 1,
+      origins: { nested: 1 },
+      wrong: "value",
+    }),
+  );
+
+  assert.equal(parsed.settings.cooldownMs, 300_000);
+  assert.equal(parsed.settings.preferVision, false);
+  assert.equal(parsed.settings.statusLine, true);
+  assert.deepEqual(parsed.settings.excludedProviders, ["openrouter"]);
+  assert.deepEqual(parsed.notes, [
+    'ignored unknown setting "mystery"',
+    'ignored "origins": expected a number, a string, a boolean, or a list of strings',
+    'ignored unknown setting "wrong"',
+  ]);
+  // Only the keys the file named are applied, so a merge can leave the rest alone.
+  assert.deepEqual(parsed.applied, ["cooldown", "vision", "status", "providers"]);
+
+  assert.match(parseSettings("{ not json").notes[0], /not valid JSON/);
+  assert.match(parseSettings("[]").notes[0], /not a JSON object/);
+  // A file that is broken does not take the defaults away from the router.
+  assert.deepEqual(parseSettings("{ not json").settings, DEFAULT_SETTINGS);
+  assert.deepEqual(parseSettings("{ not json").applied, []);
+});
+
+test("the environment overrides the file, and a bad override is reported", () => {
+  const global = JSON.stringify({ cooldown: 60_000, providers: ["openrouter"] });
+
+  const fromEnv = resolveSettings({ global, env: { PI_AAII_ROUTER_COOLDOWN_MS: "10m" } });
+  assert.equal(fromEnv.settings.cooldownMs, 600_000);
+  assert.deepEqual(fromEnv.settings.excludedProviders, ["openrouter"], "the file still supplies the rest");
+
+  const bad = resolveSettings({ global, env: { PI_AAII_ROUTER_COOLDOWN_MS: "soon" } });
+  assert.equal(bad.settings.cooldownMs, 60_000, "a bad override must not erase the configured value");
+  assert.deepEqual(bad.notes, ["ignored PI_AAII_ROUTER_COOLDOWN_MS: not a duration: soon"]);
+
+  const blank = resolveSettings({ global, env: { PI_AAII_ROUTER_STATUS: "  " } });
+  assert.equal(blank.settings.statusLine, true);
+  assert.deepEqual(blank.notes, [], "an empty variable is not an override");
+});
+
+test("a project file is merged key by key, and cannot redirect the chain", () => {
+  const global = JSON.stringify({ cooldown: 60_000, providers: ["relay"] });
+  const project = JSON.stringify({ cooldown: "15m", providers: ["openrouter"], status: false });
+
+  const merged = resolveSettings({ global, project });
+  assert.equal(merged.settings.cooldownMs, 900_000, "the project changes how long a failure is remembered");
+  assert.equal(merged.settings.statusLine, false);
+  assert.deepEqual(
+    merged.settings.excludedProviders,
+    ["relay"],
+    "a project must not be able to take a provider out of the chain",
+  );
+  assert.deepEqual(merged.notes, [
+    'ignored project setting "providers": a project may not change where requests go',
+  ]);
+  assert.ok(PROJECT_KEYS.length > 0 && !PROJECT_KEYS.includes("providers"));
+
+  // A project file that names one key leaves every other setting as the global
+  // file left it, including one the global file set and the project did not.
+  const narrow = resolveSettings({ global, project: JSON.stringify({ status: "off" }) });
+  assert.equal(narrow.settings.cooldownMs, 60_000);
+  assert.deepEqual(narrow.settings.excludedProviders, ["relay"]);
+  assert.equal(narrow.settings.statusLine, false);
+});
+
+test("writes a file it can read back", () => {
+  const settings = { ...DEFAULT_SETTINGS, cooldownMs: 90_000, excludedProviders: ["openrouter"] };
+  const text = serializeSettings(settings);
+
+  assert.deepEqual(parseSettings(text).settings, settings, "the file form is the parsed form");
+  assert.deepEqual(parseSettings(text).notes, []);
+  assert.deepEqual(Object.keys(JSON.parse(text)), ["cooldown", "vision", "status", "origins", "providers"]);
+  assert.ok(text.endsWith("\n"));
+});
+
+test("shows one line per setting, marking the ones the environment holds", () => {
+  const lines = describeSettings({ ...DEFAULT_SETTINGS, cooldownMs: 0, excludedProviders: [] });
+  assert.equal(lines.length, SETTINGS.length);
+  assert.ok(lines[0].startsWith("Cooldown window: off"), lines[0]);
+  assert.ok(lines.some((line) => line === "Excluded providers: none"));
+  assert.ok(lines.some((line) => line.includes("http://127.0.0.1:4000")));
+
+  const marked = describeSettings(DEFAULT_SETTINGS, { PI_AAII_ROUTER_STATUS: "off", PI_AAII_ROUTER_VISION: "  " });
+  assert.ok(marked.some((line) => line === "Footer status: on (env)"), "the window cannot write past the env");
+  assert.ok(marked.some((line) => line === "Image-aware order: on"), "a blank variable is not a source");
+});
+
+test("completes the subcommands, then the setting keys, then the short values", () => {
+  assert.deepEqual(completionsFor("").map((item) => item.value), SUBCOMMANDS.map((item) => item.value));
+  assert.deepEqual(completionsFor("se").map((item) => item.value), ["settings", "set"]);
+  assert.deepEqual(completionsFor("next"), [{ value: "next", description: SUBCOMMANDS.find((s) => s.value === "next")?.description }]);
+  assert.deepEqual(completionsFor("nope"), []);
+
+  const keys = completionsFor("set ").map((item) => item.value);
+  assert.deepEqual(keys, SETTINGS.map((descriptor) => `set ${descriptor.key} `));
+  assert.deepEqual(completionsFor("set co").map((item) => item.value), ["set cooldown "]);
+  assert.deepEqual(completionsFor("set status ").map((item) => item.value), ["set status on", "set status off"]);
+  assert.deepEqual(completionsFor("set status o").map((item) => item.value), ["set status on", "set status off"]);
+  assert.deepEqual(completionsFor("set cooldown o").map((item) => item.value), ["set cooldown off"]);
+  // A list setting's values come from the operator's configuration, not a table.
+  assert.deepEqual(completionsFor("set providers "), []);
+  assert.deepEqual(completionsFor("set mystery "), []);
+});
+
+test("saves and loads through the real file, and leaves no temporary behind", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "aaii-router-settings-"));
+  try {
+    const path = join(dir, "aaii-router.json");
+
+    // No file yet: the defaults, without a note that would alarm the operator.
+    assert.deepEqual(await loadSettings({ global: path }, {}), { settings: DEFAULT_SETTINGS, notes: [], applied: [] });
+    assert.equal(await readSettingsFile(path), undefined);
+
+    const settings = { ...DEFAULT_SETTINGS, cooldownMs: 45_000, excludedOrigins: [] };
+    await saveSettings(path, settings);
+    assert.deepEqual(await loadSettings({ global: path }, {}), { settings, notes: [], applied: SETTINGS.map((d) => d.key) });
+    assert.deepEqual(await readdir(dir), ["aaii-router.json"], "the write is atomic, not a leftover .tmp");
+
+    // A hand edit that is wrong is reported, and the good values still apply.
+    await writeFile(path, JSON.stringify({ cooldown: 30_000, vision: "sometimes" }), "utf8");
+    const edited = await loadSettings({ global: path }, {});
+    assert.equal(edited.settings.cooldownMs, 30_000);
+    assert.equal(edited.settings.preferVision, true, "an unreadable value falls back rather than flipping a switch");
+    assert.equal(edited.notes.length, 1);
+
+    // The environment is read at load time, so it wins over the file on disk.
+    const overridden = await loadSettings({ global: path }, { PI_AAII_ROUTER_VISION: "off" });
+    assert.equal(overridden.settings.preferVision, false);
+    assert.equal((await readFile(path, "utf8")) !== "", true, "loading never rewrites the file");
+
+    // A project file is read only when the caller hands one over, which is how
+    // trust is enforced: an untrusted project is simply never passed here.
+    const project = join(dir, ".pi", "aaii-router.json");
+    await writeFile(join(dir, "project.json"), JSON.stringify({ cooldown: 90_000 }), "utf8");
+    const withProject = await loadSettings({ global: path, project: join(dir, "project.json") }, {});
+    assert.equal(withProject.settings.cooldownMs, 90_000);
+    assert.equal(await readSettingsFile(project), undefined, "a missing project file is not an error");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
