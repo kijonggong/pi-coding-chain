@@ -1,14 +1,17 @@
 {
-  "name": "pi-coding-fallback",
+  "name": "pi-coding-chain",
   "version": "1.0.0",
-  "description": "Pi extension that keeps a coding-fallback chain in a LiteLLM router config composed from model_list, ordered by Artificial Intelligence Index",
+  "description": "Pi extensions for a coding model chain: compose the LiteLLM router config, or run the same fail-over inside Pi without a proxy",
   "private": true,
   "keywords": [
     "pi-package"
   ],
   "pi": {
     "extensions": [
-      "extensions/coding-fallback"
+      "extensions/coding-fallback",
+      "extensions/aaii-router",
+      "extensions/quota-providers",
+      "extensions/openrouter-catalog-filter"
     ]
   },
   "peerDependencies": {
