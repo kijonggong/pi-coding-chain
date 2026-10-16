@@ -1,0 +1,201 @@
+{
+  "attribution": "Artificial Analysis Intelligence Index (https://artificialanalysis.ai). Attribution is required wherever these scores surface; the free API tier is licensed for internal use without redistribution.",
+  "indexVersion": "4.3.x",
+  "retrieved": "2026-10-13",
+  "sources": {
+    "mirror": "https://huggingface.co/datasets/evaleval/EEE_datastore, path data/artificial-analysis-llms/<creator>/<model>/<uuid>.json (MIT dataset, keyless). Rebuilt from a legacy AA endpoint that retires 2026-11-04.",
+    "api": "https://artificialanalysis.ai/api/v2/language/models/free with an x-api-key header (free tier: 100 requests / 24h). Preferred once a key exists."
+  },
+  "scoreKeyFormat": "Lowercased last path segment of litellm_params.model, with . and _ folded to -. The loader applies the same normalisation.",
+  "scores": {
+    "qwen3.8-flash-next-uncensored": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry; uncensored fine-tune"
+    },
+    "qwen3.8-flash-next": {
+      "slug": "qwen3-8-flash-next",
+      "score": 39.8,
+      "variant": "Qwen3.8-Flash-Next",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-8-flash-next/00b92afb-fe96-4c86-949e-15569f8e149c.json",
+      "cronRunDate": null
+    },
+    "qwen3.8-flash-next-iq3_s": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry; local quant"
+    },
+    "z-ai/glm-5.3-flash": {
+      "slug": "glm-5-3-flash",
+      "score": 41.8,
+      "variant": "GLM-5.3-Flash",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/zai/glm-5-3-flash/019bf756-94f9-48b1-a64b-74388c97c5da.json",
+      "cronRunDate": null
+    },
+    "glm-5.2": {
+      "slug": "glm-5-2",
+      "score": 42.1,
+      "variant": "GLM-5.2 (max)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/zai/glm-5-2/056633b0-ca60-4a92-9f3c-e3baabe23c0c.json",
+      "cronRunDate": null
+    },
+    "glm-5.1": {
+      "slug": "glm-5-1",
+      "score": 41,
+      "variant": "GLM-5.1 (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/zai/glm-5-1/01c69e82-7ba5-44d6-98fc-3b1d6c84977d.json",
+      "cronRunDate": null
+    },
+    "deepseek-v4.1-flash": {
+      "slug": "deepseek-v4-1-flash",
+      "score": 39.5,
+      "variant": "DeepSeek V4.1 Flash (Reasoning, Max Effort)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/deepseek/deepseek-v4-1-flash/0541b2cc-fb23-4b21-9116-259ae986c444.json",
+      "cronRunDate": null
+    },
+    "qwen3.8-max": {
+      "slug": "qwen3-8-max",
+      "score": 45.4,
+      "variant": "Qwen3.8 Max (0902)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-8-max/0edc4884-f7cb-4fb6-ba15-a27014130db2.json",
+      "cronRunDate": null
+    },
+    "qwen3.8-max-0902": {
+      "slug": "qwen3-8-max",
+      "score": 45.4,
+      "variant": "Qwen3.8 Max (0902)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-8-max/0edc4884-f7cb-4fb6-ba15-a27014130db2.json",
+      "cronRunDate": null,
+      "note": "resolved via fallback slug qwen3-8-max"
+    },
+    "kimi-k3": {
+      "slug": "kimi-k3",
+      "score": 43.6,
+      "variant": "Kimi K3 (Max)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/kimi/kimi-k3/005286cf-6cff-4037-ae4f-05ec6f5a90ad.json",
+      "cronRunDate": null
+    },
+    "kimi-k2.7-code": {
+      "slug": "kimi-k2-7-code",
+      "score": 26.3,
+      "variant": "Kimi K2.7 Code",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/kimi/kimi-k2-7-code/0bf1a804-57b0-4fa0-ad91-b98f2053b271.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-27b": {
+      "slug": "qwen3-5-27b",
+      "score": 26.9,
+      "variant": "Qwen3.5 27B (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-5-27b/0ae4ed86-8a5d-4770-bff2-b007361f2790.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-35b-a3b": {
+      "slug": "qwen3-5-35b-a3b",
+      "score": 19.3,
+      "variant": "Qwen3.5 35B A3B (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-5-35b-a3b/00143981-d1b2-46bf-91f0-a8104e20df8e.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-122b-a10b": {
+      "slug": "qwen3-5-122b-a10b",
+      "score": 32.8,
+      "variant": "Qwen3.5 122B A10B (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-5-122b-a10b/02f9d84b-4f1b-4116-823a-5a9b51505ce0.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-397b-a17b": {
+      "slug": "qwen3-5-397b-a17b",
+      "score": 19.1,
+      "variant": "Qwen3.5 397B A17B (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-5-397b-a17b/0779faae-67cc-498b-bbb0-cc66ff088817.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-omni-plus": {
+      "slug": "qwen3-5-omni-plus",
+      "score": 20.4,
+      "variant": "Qwen3.5 Omni Plus",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-5-omni-plus/04c88ce4-06b0-4980-9b40-395741949a36.json",
+      "cronRunDate": null
+    },
+    "qwen3.6-27b": {
+      "slug": "qwen3-6-27b",
+      "score": 29,
+      "variant": "Qwen3.6 27B (Reasoning)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-6-27b/00860f3a-5038-444f-b4b3-0cdf44961fb6.json",
+      "cronRunDate": null
+    },
+    "qwen3.6-plus": {
+      "slug": "qwen3-6-plus",
+      "score": 27,
+      "variant": "Qwen3.6 Plus",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-6-plus/08d8fc8d-dadb-4d50-a36a-0bad7a1d7daa.json",
+      "cronRunDate": null
+    },
+    "qwen3.6-max-preview": {
+      "slug": "qwen3-6-max",
+      "score": 28.4,
+      "variant": "Qwen3.6 Max Preview",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-6-max/045c9dad-0750-4c60-a3c6-007c84da4b35.json",
+      "cronRunDate": null,
+      "note": "resolved via fallback slug qwen3-6-max"
+    },
+    "qwen3.7-plus": {
+      "slug": "qwen3-7-plus",
+      "score": 39.4,
+      "variant": "Qwen3.7 Plus",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-7-plus/0786b41b-ddc3-4ba2-a044-66913ef73d7e.json",
+      "cronRunDate": null
+    },
+    "qwen3.7-max": {
+      "slug": "qwen3-7-max",
+      "score": 29.5,
+      "variant": "Qwen3.7 Max",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/alibaba/qwen3-7-max/058f13f7-ee7a-4f53-8699-65da30f94194.json",
+      "cronRunDate": null
+    },
+    "qwen3.5-flash": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry"
+    },
+    "qwen3.5-plus": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry"
+    },
+    "qwen3.6-flash": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry"
+    },
+    "qwen3.7-flash": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry"
+    }
+  },
+  "aliases": {
+    "qwen3.8-flash-next-uncensored": "qwen3.8-flash-next"
+  },
+  "aliasNotes": {
+    "qwen3.8-flash-next-uncensored": "Operator decision: the index has no entry for the uncensored fine-tune, and nothing here measures the fine-tune's own quality, so it carries the base model's score. Written down rather than inferred at run time; delete this alias to send the model back to the end of its chain."
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "pi-coding-fallback",
+  "version": "1.0.0",
+  "description": "Pi extension that keeps a coding-fallback chain in a LiteLLM router config composed from model_list, ordered by Artificial Intelligence Index",
+  "private": true,
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "extensions/coding-fallback"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
