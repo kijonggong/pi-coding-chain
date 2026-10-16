@@ -56,3 +56,25 @@
 - `openrouter-catalog-filter`는 체인과 무관합니다 — 별도 패키지로 분리할 수 있습니다.
 - 실제 대화형 TUI(피커 화면)는 여전히 스텁 SDK 테스트로만 검증되었습니다.
 - 라이브 LiteLLM 설정에는 `sync` 적용이 필요합니다(미해결 결정).
+
+---
+
+## 7. 추가: 피커 행에 라우터 표시 (같은 이름의 모델 구분)
+
+행이 `☐ <모델 id>`뿐이라 **이름이 같은(접두사만 다른) 모델을 구분할 근거가 없었습니다**
+(`z-ai/glm-5.3-flash`와 `glm-5.3-flash`는 그룹 이름이 같게 나옵니다). 그래서 행이 어느
+라우터의 모델인지 함께 보여줍니다:
+
+- **목록을 읽은 경우**: 고른 업스트림 이름(slug, 없으면 host) — 예 `☐ nvidia/deepseek-v4.1-flash`
+- **폴백 목록일 때**: 그 id를 **이미 서비스하는** 업스트림 (둘이면 `·`로 연결) — 예 `☐ explabs·nvidia/glm-5.3-flash`.
+  이 id들은 목록이 없어서 설정만이 출처를 말해 줍니다.
+- 비교 키는 패키지가 쓰는 정규화(점·대시·대소문자)를 그대로 씁니다.
+
+검증: `catalog.test.ts` 19/19, `picker.test.ts` 10/10, 패키지 전체 **157개 중 155개**(실패 2개는
+라이브 설정 드리프트). 실제 SDK(`SelectList`/`Input` + `initTheme`) 렌더 실측:
+
+```
+→ ☐ zai/z-ai/glm-5.3-flash        AAII 41.8
+  ☐ zai/glm-5.3-flash             AAII 41.8
+  ☐ nvidia·explabs/deepseek-v4.1  no AAII score — it would sort last
+```

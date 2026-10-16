@@ -48,6 +48,7 @@ import {
   knownUpstreams,
   pickerHint,
   pickerTitle,
+  routerLabel,
 } from "./catalog.ts";
 import type { Candidate, PickSource } from "./catalog.ts";
 import { DEFAULT_FRESHNESS_MS, refreshFreeSnapshot } from "./free-fetch.ts";
@@ -188,7 +189,10 @@ async function offersFor(
   const listing = await listUpstreamModels({ baseUrl: option.baseUrl, apiKey: option.apiKey });
   const source: PickSource = listing.ok ? { kind: "listing" } : { kind: "config", reason: listing.reason };
   const ids = listing.ok ? listing.ids : knownUpstreams(configText, option.host);
-  const set = candidatesFrom(ids, configText, option.host, scores);
+  // A listing is the chosen upstream's own answer, so every row belongs to it.
+  // The fallback list's rows have no listing behind them, and each names the
+  // host that already serves it instead.
+  const set = candidatesFrom(ids, configText, option.host, scores, listing.ok ? routerLabel(option) : undefined);
   return { source, candidates: set.candidates, alreadyServed: set.alreadyServed };
 }
 

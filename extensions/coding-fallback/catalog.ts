@@ -19,7 +19,7 @@
 
 import { readModelEntryDetails } from "./chain.ts";
 import { freeUpstreamKey } from "./free-models.ts";
-import { describeAddition, groupName, nextCodeNumber } from "./register.ts";
+import { describeAddition, groupName, nextCodeNumber, upstreamOptions } from "./register.ts";
 import type { UpstreamOption } from "./register.ts";
 import { scoreFor } from "./scores.ts";
 import type { ScoreSnapshot } from "./scores.ts";
@@ -29,6 +29,14 @@ export interface Candidate {
   readonly id: string;
   /** AAII score when the table covers it — what the chain will rank it by. */
   readonly score?: number;
+  /**
+   * The router this row is registered on, as the picker names it: the chosen
+   * upstream for a listing, or the upstream(s) this config already serves the id
+   * on when the listing could not be read. Two rows whose ids differ only by a
+   * path prefix (`z-ai/glm-5.3-flash` and `glm-5.3-flash`) produce the same group
+   * name, so the router is what tells them apart before the name is claimed.
+   */
+  readonly router?: string;
 }
 
 /** Where the list came from. The title says which, because one of them is a guess. */
@@ -44,6 +52,42 @@ export interface CandidateSet {
 
 export const MARK_ON = "☑";
 export const MARK_OFF = "☐";
+
+/** How the picker names an upstream: its slug when the config attests one, else its hostname. */
+export function routerLabel(option: UpstreamOption): string {
+  return option.slug ?? option.host;
+}
+
+/** The same name for every upstream in the config, keyed by hostname. */
+export function routerLabels(text: string): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const option of upstreamOptions(text)) labels.set(option.host, routerLabel(option));
+  return labels;
+}
+
+/**
+ * Which upstreams already serve each model id, in the picker's names. The key is
+ * the comparison key the rest of the package uses, so a host that spells an id
+ * with dots and one that spells it with dashes are one entry.
+ */
+function sourcesById(text: string, host: string): Map<string, string> {
+  const labels = routerLabels(text);
+  const found = new Map<string, Set<string>>();
+
+  for (const detail of readModelEntryDetails(text.split(/\r?\n/))) {
+    if (detail.host === host || detail.upstream === "") continue;
+    const key = freeUpstreamKey("", detail.upstream);
+    const set = found.get(key) ?? new Set<string>();
+    set.add(labels.get(detail.host) ?? detail.host);
+    found.set(key, set);
+  }
+
+  const sources = new Map<string, string>();
+  for (const [key, set] of found) {
+    sources.set(key, [...set].sort((a, b) => a.localeCompare(b)).join("·"));
+  }
+  return sources;
+}
 
 /**
  * Upstream ids the host already has a group for. The key is the one the free
@@ -78,15 +122,23 @@ export function compareCandidates(a: Candidate, b: Candidate): number {
 
 /**
  * The candidates for one host: the ids offered, minus what it already serves,
- * each with the score the chain would rank it by.
+ * each with the score the chain would rank it by and the router the row belongs
+ * to.
+ *
+ * `router` names the upstream the list came from — the one the operator chose.
+ * Left out, the id's routers are read from the config instead, which is the
+ * fallback list's case: those ids have no listing behind them, so the hosts that
+ * already serve one are the only thing that says where it comes from.
  */
 export function candidatesFrom(
   ids: readonly string[],
   text: string,
   host: string,
   scores: ScoreSnapshot,
+  router?: string,
 ): CandidateSet {
   const served = servedUpstreams(text, host);
+  const sources = router === undefined ? sourcesById(text, host) : undefined;
   const seen = new Set<string>();
   const candidates: Candidate[] = [];
   let alreadyServed = 0;
@@ -98,15 +150,24 @@ export function candidatesFrom(
       alreadyServed += 1;
       continue;
     }
-    candidates.push({ id, score: scoreFor(scores, id) });
+    candidates.push({
+      id,
+      score: scoreFor(scores, id),
+      router: router ?? sources?.get(freeUpstreamKey("", id)) ?? host,
+    });
   }
 
   candidates.sort(compareCandidates);
   return { candidates, alreadyServed };
 }
 
+/**
+ * A row: the mark, the router the model would be registered on, and the id. The
+ * router leads because the group name it produces leads with the slug too.
+ */
 export function candidateLabel(candidate: Candidate, marked: boolean): string {
-  return `${marked ? MARK_ON : MARK_OFF} ${candidate.id}`;
+  const router = candidate.router === undefined || candidate.router === "" ? "" : `${candidate.router}/`;
+  return `${marked ? MARK_ON : MARK_OFF} ${router}${candidate.id}`;
 }
 
 export function candidateDescription(candidate: Candidate): string {

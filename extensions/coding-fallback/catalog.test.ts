@@ -14,6 +14,7 @@ import { test } from "node:test";
 import {
   MARK_OFF,
   MARK_ON,
+  candidateLabel,
   candidatesFrom,
   claimNames,
   compareCandidates,
@@ -21,6 +22,7 @@ import {
   knownUpstreams,
   pickerTitle,
   resolveSelection,
+  routerLabels,
   servedUpstreams,
   sourceLine,
   toggleMarked,
@@ -91,17 +93,69 @@ test("candidates are what the host lists minus what it already serves", () => {
     CONFIG,
     NVIDIA,
     SCORES,
+    "nvidia",
   );
 
   assert.deepEqual(set.candidates, [
-    { id: "glm-5.3-flash", score: 41.8 },
-    { id: "qwen3.5-27b", score: undefined },
+    { id: "glm-5.3-flash", score: 41.8, router: "nvidia" },
+    { id: "qwen3.5-27b", score: undefined, router: "nvidia" },
   ]);
   assert.equal(set.alreadyServed, 1, "the host's own model is counted, not offered");
 });
 
+test("a listing's rows all belong to the upstream that answered", () => {
+  const set = candidatesFrom(["deepseek-v4.1-flash", "new-a", "new-b"], CONFIG, EXPLABS, SCORES, "explabs");
+  assert.deepEqual(
+    set.candidates.map((candidate) => candidate.router),
+    ["explabs", "explabs", "explabs"],
+    "the chosen upstream, not the host that already uses an id",
+  );
+});
+
+test("a fallback row names the upstream that already serves the id", () => {
+  // No listing behind these ids, so the config is the only thing that says where
+  // each came from — the basis for telling two same-named models apart.
+  const set = candidatesFrom(knownUpstreams(CONFIG, "relay.example.invalid"), CONFIG, "relay.example.invalid", SCORES);
+
+  assert.deepEqual(
+    set.candidates.map((candidate) => [candidate.id, candidate.router]),
+    [
+      ["glm-5.3-flash", "explabs"],
+      ["deepseek-v4.1-flash", "nvidia"],
+      ["qwen3.5-27b", "dashscope-intl.aliyuncs.com"],
+    ],
+    "score order, and one host attests a slug while the other is named by its hostname",
+  );
+});
+
+test("an id two upstreams serve names both of them", () => {
+  const one = candidatesFrom(["glm-5.3-flash"], CONFIG, "relay.example.invalid", SCORES);
+  assert.deepEqual(one.candidates.map((candidate) => [candidate.id, candidate.router]), [["glm-5.3-flash", "explabs"]]);
+
+  // The same id on a second host, spelled with dashes: still one row, both names.
+  const alsoNvidia = CONFIG.replace(
+    "- model_name: code-2-nvidia-deepseek-v4.1-flash",
+    "- model_name: code-9-nvidia-glm-5.3-flash\n  litellm_params:\n    model: openai/glm-5.3-flash\n    api_base: https://integrate.api.nvidia.com/v1\n- model_name: code-2-nvidia-deepseek-v4.1-flash",
+  );
+  const both = candidatesFrom(["glm-5.3-flash"], alsoNvidia, "relay.example.invalid", SCORES);
+  assert.deepEqual(both.candidates.map((candidate) => [candidate.id, candidate.router]), [
+    ["glm-5.3-flash", "explabs·nvidia"],
+  ]);
+});
+
+test("the picker's router names come from the slug a host's own names attest", () => {
+  const labels = routerLabels(CONFIG);
+  assert.equal(labels.get(EXPLABS), "explabs");
+  assert.equal(labels.get(NVIDIA), "nvidia");
+  assert.equal(
+    labels.get("dashscope-intl.aliyuncs.com"),
+    "dashscope-intl.aliyuncs.com",
+    "a host whose names attest no slug is named by its hostname, the same fallback the window asks about",
+  );
+});
+
 test("a model on another host is still offered", () => {
-  const set = candidatesFrom(["glm-5.3-flash"], CONFIG, NVIDIA, SCORES);
+  const set = candidatesFrom(["glm-5.3-flash"], CONFIG, NVIDIA, SCORES, "nvidia");
   assert.deepEqual(set.candidates.map((candidate) => candidate.id), ["glm-5.3-flash"]);
 });
 
@@ -111,6 +165,7 @@ test("candidates are deduplicated and ordered by the score the chain uses", () =
     CONFIG,
     NVIDIA,
     SCORES,
+    "nvidia",
   );
   assert.deepEqual(set.candidates.map((candidate) => candidate.id), [
     "glm-5.3-flash",
@@ -123,13 +178,23 @@ test("candidates are deduplicated and ordered by the score the chain uses", () =
 test("a score is read through the same folding the chain uses", () => {
   // The table keys fold `.` to `-`, so `deepseek-v4.1-flash` resolves: the score
   // is the one the chain will actually order by.
-  const set = candidatesFrom(["deepseek-v4.1-flash"], CONFIG, EXPLABS, SCORES);
-  assert.deepEqual(set.candidates, [{ id: "deepseek-v4.1-flash", score: 39.5 }]);
+  const set = candidatesFrom(["deepseek-v4.1-flash"], CONFIG, EXPLABS, SCORES, "explabs");
+  assert.deepEqual(set.candidates, [{ id: "deepseek-v4.1-flash", score: 39.5, router: "explabs" }]);
 });
 
-test("candidate rows carry the mark and the rank", () => {
-  assert.equal(`☑ glm-5.3-flash`, `${MARK_ON} glm-5.3-flash`);
-  assert.equal(`☐ glm-5.3-flash`, `${MARK_OFF} glm-5.3-flash`);
+test("candidate rows carry the mark, the router and the rank", () => {
+  assert.equal(candidateLabel({ id: "glm-5.3-flash", router: "nvidia" }, true), `${MARK_ON} nvidia/glm-5.3-flash`);
+  assert.equal(candidateLabel({ id: "glm-5.3-flash", router: "nvidia" }, false), `${MARK_OFF} nvidia/glm-5.3-flash`);
+  assert.equal(
+    candidateLabel({ id: "glm-5.3-flash", router: "explabs·nvidia" }, false),
+    `${MARK_OFF} explabs·nvidia/glm-5.3-flash`,
+    "an id two upstreams serve keeps both names in the row",
+  );
+  assert.equal(
+    candidateLabel({ id: "glm-5.3-flash" }, false),
+    `${MARK_OFF} glm-5.3-flash`,
+    "a row without a known router is still a row",
+  );
   assert.equal(compareCandidates({ id: "a", score: 10 }, { id: "b", score: 20 }), 10);
   assert.equal(compareCandidates({ id: "a" }, { id: "b" }), -1);
 });

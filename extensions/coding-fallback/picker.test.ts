@@ -192,9 +192,9 @@ after(async () => {
 const THEME = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
 const TITLE = pickerTitle("host", { kind: "listing" }, 3, 1);
 const CANDIDATES: readonly Candidate[] = [
-  { id: "beta", score: 41.8 },
-  { id: "alpha", score: 39.5 },
-  { id: "gamma" },
+  { id: "beta", score: 41.8, router: "nvidia" },
+  { id: "alpha", score: 39.5, router: "nvidia" },
+  { id: "gamma", router: "explabs·nvidia" },
 ];
 
 const DOWN = "\x1b[B";
@@ -246,51 +246,68 @@ test("every rendered line is a string, whatever the state", () => {
   linesOf(picker);
 });
 
-test("draws the title, the hint and a row per candidate", () => {
+test("draws the title, the hint and a row per candidate, with its router", () => {
   const { picker, text } = open();
   assert.match(text(), /add — host lists 3 to add \(1 already in model_list\)/);
   assert.match(text(), /space mark · enter add · esc cancel · type to filter/);
-  assert.match(text(), /→ ☐ beta\s+AAII 41\.8/);
-  assert.match(text(), /☐ alpha\s+AAII 39\.5/);
-  assert.match(text(), /☐ gamma\s+no AAII score/);
+  assert.match(text(), /→ ☐ nvidia\/beta\s+AAII 41\.8/);
+  assert.match(text(), /☐ nvidia\/alpha\s+AAII 39\.5/);
+  assert.match(text(), /☐ explabs·nvidia\/gamma\s+no AAII score/);
   assert.equal(picker.markedCount, 0);
   assert.doesNotMatch(text(), /marked/, "nothing marked, nothing to report");
+});
+
+test("two ids that differ only by a path prefix read as two different rows", () => {
+  const { picker, text } = open([
+    { id: "z-ai/glm-5.3-flash", score: 41.8, router: "zai" },
+    { id: "glm-5.3-flash", score: 41.8, router: "zai" },
+  ]);
+  assert.match(text(), /☐ zai\/z-ai\/glm-5\.3-flash/);
+  assert.match(text(), /☐ zai\/glm-5\.3-flash/);
+  assert.notEqual(
+    linesOf(picker).filter((line) => line.includes("glm-5.3-flash")).length,
+    1,
+    "the pair is two rows, not one",
+  );
 });
 
 test("typing narrows the list without touching the marks", () => {
   const { picker, text } = open();
   picker.handleInput(" ");
   assert.match(text(), /☑ 1 marked/);
-  assert.match(text(), /☑ beta/);
+  assert.match(text(), /☑ nvidia\/beta/);
 
   picker.handleInput("g");
   assert.doesNotMatch(text(), /beta/, "the filter hides what it does not match");
-  assert.match(text(), /☐ gamma/);
+  assert.match(text(), /☐ explabs·nvidia\/gamma/);
   assert.match(text(), /☑ 1 marked/);
   assert.equal(picker.markedCount, 1, "a hidden mark is still marked");
 
   picker.handleInput("\x7f");
-  assert.match(text(), /☑ beta/, "clearing the filter brings the mark back");
+  assert.match(text(), /☑ nvidia\/beta/, "clearing the filter brings the mark back");
 });
 
 test("space marks the row under the cursor, and unmarks it again", () => {
   const { picker, text } = open();
   picker.handleInput(DOWN);
   picker.handleInput(" ");
-  assert.match(text(), /→ ☑ alpha/);
+  assert.match(text(), /→ ☑ nvidia\/alpha/);
   assert.equal(picker.markedCount, 1);
 
   picker.handleInput(" ");
   assert.equal(picker.markedCount, 0);
-  assert.match(text(), /→ ☐ alpha/);
+  assert.match(text(), /→ ☐ nvidia\/alpha/);
   assert.doesNotMatch(text(), /marked/);
 });
 
 test("enter with nothing marked adds the row under the cursor", () => {
-  const { picker, state } = open([{ id: "beta", score: 41.8 }, { id: "alpha", score: 39.5 }]);
+  const { picker, state } = open([
+    { id: "beta", score: 41.8, router: "nvidia" },
+    { id: "alpha", score: 39.5, router: "nvidia" },
+  ]);
   picker.handleInput(DOWN);
   picker.handleInput(ENTER);
-  assert.deepEqual(state.outcome, [{ id: "alpha", score: 39.5 }]);
+  assert.deepEqual(state.outcome, [{ id: "alpha", score: 39.5, router: "nvidia" }]);
 });
 
 test("enter with marks adds them in the list's order, not the order they were pressed", () => {
@@ -303,7 +320,10 @@ test("enter with marks adds them in the list's order, not the order they were pr
   assert.equal(picker.markedCount, 2);
 
   picker.handleInput(ENTER);
-  assert.deepEqual(state.outcome, [{ id: "beta", score: 41.8 }, { id: "gamma" }]);
+  assert.deepEqual(state.outcome, [
+    { id: "beta", score: 41.8, router: "nvidia" },
+    { id: "gamma", router: "explabs·nvidia" },
+  ]);
 });
 
 test("enter adds a mark that the filter is currently hiding", () => {
@@ -311,7 +331,7 @@ test("enter adds a mark that the filter is currently hiding", () => {
   picker.handleInput(" "); // mark beta
   picker.handleInput("gamma"); // filter the list down to gamma
   picker.handleInput(ENTER);
-  assert.deepEqual(state.outcome, [{ id: "beta", score: 41.8 }]);
+  assert.deepEqual(state.outcome, [{ id: "beta", score: 41.8, router: "nvidia" }]);
 });
 
 test("escape adds nothing", () => {

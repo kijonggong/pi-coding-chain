@@ -245,6 +245,11 @@ to what it serves, so anything marked is something that host says it has:
    | enter | adds the marked rows, or the one under the cursor when none is marked |
    | esc | cancels, adding nothing |
 
+   Every row is `☐ <router>/<model id>`, and the description is the score the chain
+   would rank it by. **The router is the part that identifies a model**: two ids that
+   differ only by a path prefix (`z-ai/glm-5.3-flash` and `glm-5.3-flash`) claim
+   names that read the same, so the row has to say which upstream each came from.
+
    Marks survive filtering, so a model can be found, marked, and the filter cleared
    without losing it. What the host already serves is left out of the list and
    counted in the title instead; the same model on *another* host is still offered,
@@ -258,9 +263,12 @@ to what it serves, so anything marked is something that host says it has:
    what the host calls the model, and a group written from one fails on every call.
    The fallback is the ids this config already uses on its *other* hosts, whose
    spelling some upstream already accepts, and the title says which of the two lists
-   is on screen — so a fallback list is never mistaken for the host's own answer. An
-   id nobody uses yet is typed through the scriptable form, where the operator is the
-   one who knows how the host spells it.
+   is on screen — so a fallback list is never mistaken for the host's own answer. On
+   a fallback row the router named is the upstream **already serving** that id (both
+   of them, joined with `·`, when two hosts serve it), because those ids have no
+   listing behind them and the config is the only thing that says where they come
+   from. An id nobody uses yet is typed through the scriptable form, where the
+   operator is the one who knows how the host spells it.
 3. **The names**, claimed as `code-<n>-<slug>-<model>`, one number per model,
    numbered after the highest `code-<n>-` in the file. A number whose name is already
    taken is skipped, so a batch cannot collide with a group written by hand outside
