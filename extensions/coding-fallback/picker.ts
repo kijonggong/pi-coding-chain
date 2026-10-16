@@ -92,12 +92,18 @@ export class ModelPicker implements Component {
     this.cursorId = this.list.getSelectedItem()?.value ?? this.cursorId;
   }
 
+  /**
+   * Every element is a line of text. `Input.render` and `SelectList.render`
+   * return arrays of lines, so they are spread rather than nested: the TUI
+   * paints each element with `String.replace`, and an array where a string
+   * belongs is a crash rather than a formatting bug.
+   */
   render(width: number): string[] {
     const marked = this.marked.size === 0 ? [] : [this.theme.fg("accent", `${MARK_ON} ${this.marked.size} marked`)];
     return [
       this.theme.fg("accent", this.theme.bold(this.options.title)),
       ...marked,
-      this.search.render(width),
+      ...this.search.render(width),
       "",
       ...this.list.render(width),
       "",

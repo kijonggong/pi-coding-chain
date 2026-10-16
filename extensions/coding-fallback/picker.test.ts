@@ -207,13 +207,44 @@ interface Harness {
   readonly text: () => string;
 }
 
+/**
+ * Render and insist that every element is a line of text. The TUI paints each
+ * element with `String.replace`, so a nested array (a child's `render` result
+ * spread nowhere) crashes the session rather than showing a wrong row — which
+ * is how a missing `...` reached a user's terminal once.
+ */
+function linesOf(picker: Component, width = 80): string[] {
+  const lines = picker.render(width);
+  lines.forEach((line, index) => {
+    assert.equal(typeof line, "string", `line ${index} is not a string: ${JSON.stringify(line)?.slice(0, 80)}`);
+  });
+  return lines;
+}
+
 function open(candidates: readonly Candidate[] = CANDIDATES): Harness {
   const state: { outcome?: PickerOutcome } = {};
   const picker = new ModelPicker({ title: TITLE, hint: pickerHint(), candidates }, THEME, (outcome) => {
     state.outcome = outcome;
   });
-  return { picker, state, text: () => picker.render(80).join("\n") };
+  return { picker, state, text: () => linesOf(picker).join("\n") };
 }
+
+test("every rendered line is a string, whatever the state", () => {
+  const { picker } = open();
+
+  assert.ok(linesOf(picker).length > 3, "the title, the filter, the rows and the hint are drawn");
+  assert.ok(linesOf(picker, 20).every((line) => typeof line === "string"), "a narrow window too");
+
+  picker.handleInput(" ");
+  assert.ok(linesOf(picker).some((line) => line.includes("1 marked")), "the marked line is drawn");
+
+  picker.handleInput("zzz");
+  linesOf(picker);
+
+  picker.handleInput("\x7f\x7f\x7f");
+  picker.handleInput(DOWN);
+  linesOf(picker);
+});
 
 test("draws the title, the hint and a row per candidate", () => {
   const { picker, text } = open();
