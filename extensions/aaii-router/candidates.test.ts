@@ -51,6 +51,48 @@ const CREDIT_HOST = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
 const PROXY_HOST = "http://127.0.0.1:4000/v1";
 const UNKNOWN_HOST = "https://relay.example.invalid/v1";
 
+test("an allowed-models entry limits one provider and leaves the others alone", () => {
+  const models = [
+    model("commandcode", "deepseek/deepseek-v4.1-flash", WEEKLY_HOST),
+    model("commandcode", "deepseek/deepseek-v4.1-flash-fast", WEEKLY_HOST),
+    model("commandcode", "Qwen/Qwen3.8-Max", WEEKLY_HOST),
+    model("skyautonet-local", "qwen3.8-flash-next-iq3_s", FREE_HOST),
+  ];
+
+  const candidates = buildCandidates(models, SCORES, {
+    allowedModels: ["commandcode/deepseek/deepseek-v4.1-flash"],
+  });
+
+  assert.deepEqual(candidates.map((candidate) => candidate.label).sort(), [
+    "commandcode/deepseek/deepseek-v4.1-flash",
+    // No entry for this provider, so every one of its models stays.
+    "skyautonet-local/qwen3.8-flash-next-iq3_s",
+  ]);
+  // Exact labels, not prefixes: the -fast sibling is a different model.
+  assert.ok(!candidates.some((candidate) => candidate.id.endsWith("-fast")));
+});
+
+test("several entries can pin different providers", () => {
+  const models = [
+    model("commandcode", "deepseek/deepseek-v4.1-flash", WEEKLY_HOST),
+    model("commandcode", "Qwen/Qwen3.8-Max", WEEKLY_HOST),
+    model("experientiallabs", "muse-spark-open", MONTHLY_HOST),
+    model("experientiallabs", "deepseek-v4.1-flash", MONTHLY_HOST),
+  ];
+
+  const candidates = buildCandidates(models, SCORES, {
+    allowedModels: [
+      "commandcode/deepseek/deepseek-v4.1-flash",
+      "experientiallabs/muse-spark-open",
+    ],
+  });
+
+  assert.deepEqual(candidates.map((candidate) => candidate.label).sort(), [
+    "commandcode/deepseek/deepseek-v4.1-flash",
+    "experientiallabs/muse-spark-open",
+  ]);
+});
+
 test("orders candidates by score, then by the soonest-resetting tier", () => {
   // One model resold by two providers, as Pi represents it: distinct providers,
   // never the same provider and id twice (Pi keys a catalog entry by both).

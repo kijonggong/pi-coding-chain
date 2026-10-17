@@ -24,7 +24,7 @@ import { DEFAULT_COOLDOWN_MS } from "./cooldown.ts";
  * actually applies, rather than repeating them. */
 export { DEFAULT_COOLDOWN_MS, DEFAULT_EXCLUDED_ORIGINS };
 
-export const SETTING_KEYS = ["cooldown", "vision", "status", "origins", "providers"] as const;
+export const SETTING_KEYS = ["cooldown", "vision", "status", "origins", "providers", "models"] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export interface Settings {
@@ -38,6 +38,11 @@ export interface Settings {
   readonly excludedOrigins: readonly string[];
   /** Providers to leave out of the chain entirely, by provider id. */
   readonly excludedProviders: readonly string[];
+  /**
+   * `provider/id` entries that limit a provider to the models listed for it.
+   * A provider with no entry keeps every model.
+   */
+  readonly allowedModels: readonly string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -46,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statusLine: true,
   excludedOrigins: DEFAULT_EXCLUDED_ORIGINS,
   excludedProviders: [],
+  allowedModels: [],
 };
 
 export type SettingKind = "duration" | "toggle" | "list";
@@ -104,6 +110,14 @@ export const SETTINGS: readonly SettingDescriptor[] = [
     help: "Provider ids to leave out of the chain, comma separated, e.g. openrouter. An excluded provider is not a candidate even when it is authenticated.",
     value: (settings) => (settings.excludedProviders.length > 0 ? settings.excludedProviders.join(", ") : "none"),
   },
+  {
+    key: "models",
+    label: "Allowed models",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_ALLOW_MODELS",
+    help: "Limit a provider to the models listed for it, comma separated as provider/id, e.g. commandcode/deepseek/deepseek-v4.1-flash. A provider with no entry keeps every model.",
+    value: (settings) => (settings.allowedModels.length > 0 ? settings.allowedModels.join(", ") : "none"),
+  },
 ];
 
 /** `300000` -> `5m`. Used for display; the file always holds milliseconds. */
@@ -138,6 +152,7 @@ export interface ParsedSettings {
 
 const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/i;
 const PROVIDER_ID = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+const MODEL_ENTRY = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/(\S+)$/;
 const TOGGLE_ON = new Set(["on", "true", "yes", "1"]);
 const TOGGLE_OFF = new Set(["off", "false", "no", "0"]);
 
@@ -175,6 +190,29 @@ export function parseToggle(text: string): boolean | undefined {
 export function parseList(text: string): string[] {
   const parts = text.split(/[,\n]/).map((part) => part.trim()).filter((part) => part !== "");
   return [...new Set(parts)];
+}
+
+/**
+ * `provider/id` entries. The provider is the part before the first slash and
+ * the model id may contain slashes of its own (`commandcode/deepseek/x`), so
+ * only the first separator is structural. A bare model id is rejected: it
+ * would say nothing about which provider it restricts.
+ */
+export function parseAllowedModels(text: string): {
+  readonly models?: string[];
+  readonly rejected: string[];
+} {
+  const rejected: string[] = [];
+  const models: string[] = [];
+  for (const entry of parseList(text)) {
+    const match = MODEL_ENTRY.exec(entry);
+    if (!match) {
+      rejected.push(entry);
+      continue;
+    }
+    if (!models.includes(entry)) models.push(entry);
+  }
+  return { models: rejected.length === 0 ? models : undefined, rejected };
 }
 
 export function parseOrigins(text: string): { readonly origins?: string[]; readonly rejected: string[] } {
@@ -222,6 +260,11 @@ export function editSetting(
       const bad = providers.filter((provider) => !PROVIDER_ID.test(provider));
       if (bad.length > 0) return { ok: false, reason: `not a provider id: ${bad.join(", ")}` };
       return { ok: true, settings: { ...settings, excludedProviders: providers } };
+    }
+    case "models": {
+      const { models, rejected } = parseAllowedModels(raw);
+      if (models === undefined) return { ok: false, reason: `not provider/id: ${rejected.join(", ")}` };
+      return { ok: true, settings: { ...settings, allowedModels: models } };
     }
   }
 }
@@ -292,6 +335,8 @@ function copyField(target: Settings, source: Settings, key: SettingKey): Setting
       return { ...target, excludedOrigins: source.excludedOrigins };
     case "providers":
       return { ...target, excludedProviders: source.excludedProviders };
+    case "models":
+      return { ...target, allowedModels: source.allowedModels };
   }
 }
 
@@ -369,6 +414,7 @@ export function serializeSettings(settings: Settings): string {
     status: settings.statusLine,
     origins: [...settings.excludedOrigins],
     providers: [...settings.excludedProviders],
+    models: [...settings.allowedModels],
   };
   return `${JSON.stringify(body, null, 2)}\n`;
 }

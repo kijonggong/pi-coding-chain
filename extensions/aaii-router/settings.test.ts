@@ -24,6 +24,7 @@ import {
   editSetting,
   loadSettings,
   milliseconds,
+  parseAllowedModels,
   parseDuration,
   parseList,
   parseOrigins,
@@ -103,6 +104,22 @@ test("validates one setting at a time, so the wizard can refuse a typo", () => {
   assert.deepEqual(providers.ok && providers.settings.excludedProviders, ["openrouter", "litellm"]);
   // The settings that were not named are not disturbed.
   assert.equal(providers.ok && providers.settings.cooldownMs, DEFAULT_COOLDOWN_MS);
+
+  const models = editSetting(
+    DEFAULT_SETTINGS,
+    "models",
+    "commandcode/deepseek/deepseek-v4.1-flash, skyautonet-local/qwen3.8-flash-next-iq3_s",
+  );
+  assert.deepEqual(models.ok && models.settings.allowedModels, [
+    "commandcode/deepseek/deepseek-v4.1-flash",
+    "skyautonet-local/qwen3.8-flash-next-iq3_s",
+  ]);
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "models", "deepseek-v4.1-flash"), {
+    ok: false,
+    reason: "not provider/id: deepseek-v4.1-flash",
+  });
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "models", "/deepseek-v4.1-flash").ok, false);
+  assert.deepEqual(parseAllowedModels("a/b, c").rejected, ["c"]);
 });
 
 test("reports what a file said that could not be used instead of guessing", () => {
@@ -179,13 +196,49 @@ test("a project file is merged key by key, and cannot redirect the chain", () =>
 });
 
 test("writes a file it can read back", () => {
-  const settings = { ...DEFAULT_SETTINGS, cooldownMs: 90_000, excludedProviders: ["openrouter"] };
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    cooldownMs: 90_000,
+    excludedProviders: ["openrouter"],
+    allowedModels: ["commandcode/deepseek/deepseek-v4.1-flash"],
+  };
   const text = serializeSettings(settings);
 
   assert.deepEqual(parseSettings(text).settings, settings, "the file form is the parsed form");
   assert.deepEqual(parseSettings(text).notes, []);
-  assert.deepEqual(Object.keys(JSON.parse(text)), ["cooldown", "vision", "status", "origins", "providers"]);
+  assert.deepEqual(Object.keys(JSON.parse(text)), [
+    "cooldown",
+    "vision",
+    "status",
+    "origins",
+    "providers",
+    "models",
+  ]);
   assert.ok(text.endsWith("\n"));
+});
+
+test("an allowlist can be written as a partial file and read back", () => {
+  const parsed = parseSettings(JSON.stringify({ models: ["commandcode/deepseek/deepseek-v4.1-flash"] }));
+
+  assert.deepEqual(parsed.settings.allowedModels, ["commandcode/deepseek/deepseek-v4.1-flash"]);
+  assert.deepEqual(parsed.notes, []);
+  assert.deepEqual(parsed.applied, ["models"]);
+  // Only the named key changed; every other setting stays at its default.
+  assert.equal(parsed.settings.cooldownMs, DEFAULT_SETTINGS.cooldownMs);
+  assert.deepEqual(parsed.settings.excludedOrigins, DEFAULT_SETTINGS.excludedOrigins);
+});
+
+test("the environment can hold the allowlist, and a bare model id is refused", () => {
+  const fromEnv = resolveSettings({
+    env: { PI_AAII_ROUTER_ALLOW_MODELS: "commandcode/deepseek/deepseek-v4.1-flash" },
+  });
+  assert.deepEqual(fromEnv.settings.allowedModels, ["commandcode/deepseek/deepseek-v4.1-flash"]);
+
+  const bad = resolveSettings({ env: { PI_AAII_ROUTER_ALLOW_MODELS: "deepseek-v4.1-flash" } });
+  assert.deepEqual(bad.notes, [
+    "ignored PI_AAII_ROUTER_ALLOW_MODELS: not provider/id: deepseek-v4.1-flash",
+  ]);
+  assert.deepEqual(bad.settings.allowedModels, []);
 });
 
 test("shows one line per setting, marking the ones the environment holds", () => {

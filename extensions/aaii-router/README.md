@@ -34,6 +34,21 @@ send the request back into the chain this replaces. `quota-providers` registers
 the `monthly` and `credit` hosts as real Pi providers, which is what makes those
 tiers reachable as candidates.
 
+### Allowed models
+
+A provider can be limited to specific models without taking it out of the chain:
+
+```text
+/aaii-router set models commandcode/deepseek/deepseek-v4.1-flash
+```
+
+An entry is an exact `provider/id`. A provider that appears in the list is a
+candidate only for the ids listed for it; a provider with no entry keeps every
+model. That keeps an upstream that serves one model from offering the rest of
+its catalog, and a prefix does not count: the `-fast` sibling of a listed id is a
+different model. `PI_AAII_ROUTER_ALLOW_MODELS` is the environment form, and a
+project file cannot set it, for the same reason it cannot set `providers`.
+
 ## Where the candidate list comes from
 
 **The list of models is automatic. The inputs it is *ordered* by are not.**

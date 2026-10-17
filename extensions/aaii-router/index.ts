@@ -237,6 +237,7 @@ async function registry(ctx: ExtensionContext, settings: Settings): Promise<Regi
     candidates: buildCandidates(physicalModels(ctx), snapshot, {
       excludedOrigins: settings.excludedOrigins,
       excludedProviders: settings.excludedProviders,
+      allowedModels: settings.allowedModels,
     }),
   };
   return cache;

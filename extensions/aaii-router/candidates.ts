@@ -48,6 +48,14 @@ export interface BuildOptions {
   readonly excludedOrigins?: readonly string[];
   /** Provider ids to leave out, whatever the model. */
   readonly excludedProviders?: readonly string[];
+  /**
+   * `provider/id` entries that limit a provider to the models listed for it.
+   * A provider named here contributes only those models; a provider with no
+   * entry keeps every model. Exact labels, never prefixes: listing
+   * `commandcode/deepseek/deepseek-v4.1-flash` does not also admit its `-fast`
+   * sibling.
+   */
+  readonly allowedModels?: readonly string[];
 }
 
 /** The LiteLLM proxy origin: the default, and what the setting starts from. */
@@ -76,6 +84,20 @@ export function candidateLabel(model: PhysicalModel): string {
   return `${model.provider}/${model.id}`;
 }
 
+/** Allowed labels, grouped by the provider they restrict. */
+export function allowlistByProvider(entries: readonly string[]): Map<string, Set<string>> {
+  const byProvider = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    const slash = entry.indexOf("/");
+    if (slash <= 0 || slash === entry.length - 1) continue;
+    const provider = entry.slice(0, slash);
+    const labels = byProvider.get(provider) ?? new Set<string>();
+    labels.add(entry);
+    byProvider.set(provider, labels);
+  }
+  return byProvider;
+}
+
 /** Physical models from a registry listing, dropping the excluded origins. */
 export function eligibleModels(
   models: readonly PhysicalModel[],
@@ -83,6 +105,7 @@ export function eligibleModels(
 ): PhysicalModel[] {
   const excluded = new Set(options.excludedOrigins ?? DEFAULT_EXCLUDED_ORIGINS);
   const excludedProviders = new Set(options.excludedProviders ?? []);
+  const allowed = allowlistByProvider(options.allowedModels ?? []);
   const seen = new Set<string>();
   const kept: PhysicalModel[] = [];
 
@@ -91,6 +114,9 @@ export function eligibleModels(
     if (seen.has(label)) continue;
     if (excluded.has(originOf(model.baseUrl))) continue;
     if (excludedProviders.has(model.provider)) continue;
+    // A provider with an allowlist is limited to it; the rest are untouched.
+    const allowedForProvider = allowed.get(model.provider);
+    if (allowedForProvider !== undefined && !allowedForProvider.has(label)) continue;
     seen.add(label);
     kept.push(model);
   }
