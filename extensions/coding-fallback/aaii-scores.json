@@ -8,6 +8,21 @@
   },
   "scoreKeyFormat": "Lowercased last path segment of litellm_params.model, with . and _ folded to -. The loader applies the same normalisation.",
   "scores": {
+    "muse-spark-open": {
+      "slug": "muse-spark-open",
+      "score": 38.9,
+      "variant": "Muse Spark Open (Xhigh)",
+      "sourceUrl": "https://huggingface.co/datasets/evaleval/EEE_datastore/raw/main/data/artificial-analysis-llms/meta/muse-spark-open/f07268c3-4452-45f3-9f95-0257c3bcaeef.json",
+      "cronRunDate": null
+    },
+    "deepseek-v4.1-flash-uncensored": {
+      "slug": null,
+      "score": null,
+      "variant": null,
+      "sourceUrl": null,
+      "cronRunDate": null,
+      "note": "no AA entry; uncensored fine-tune of deepseek-v4.1-flash"
+    },
     "qwen3.8-flash-next-uncensored": {
       "slug": null,
       "score": null,
@@ -193,9 +208,11 @@
     }
   },
   "aliases": {
-    "qwen3.8-flash-next-uncensored": "qwen3.8-flash-next"
+    "qwen3.8-flash-next-uncensored": "qwen3.8-flash-next",
+    "deepseek-v4.1-flash-uncensored": "deepseek-v4.1-flash"
   },
   "aliasNotes": {
-    "qwen3.8-flash-next-uncensored": "Operator decision: the index has no entry for the uncensored fine-tune, and nothing here measures the fine-tune's own quality, so it carries the base model's score. Written down rather than inferred at run time; delete this alias to send the model back to the end of its chain."
+    "qwen3.8-flash-next-uncensored": "Operator decision: the index has no entry for the uncensored fine-tune, and nothing here measures the fine-tune's own quality, so it carries the base model's score. Written down rather than inferred at run time; delete this alias to send the model back to the end of its chain.",
+    "deepseek-v4.1-flash-uncensored": "Operator decision: the index carries deepseek-v4-1-flash but no entry for its uncensored fine-tune, so it takes the base model's score (39.5). Written down rather than inferred at run time; delete this alias to send the model back to the end of its chain."
   }
 }

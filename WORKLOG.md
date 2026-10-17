@@ -147,3 +147,29 @@ coding-fallback: code-2-nvidia → code-4-explabs → code-7-qwen3.8 → code-8 
   설치본(`e67472e`)은 아직 빈 체인을 허용하지 않아 새 라이브 설정에서 경고를 냅니다.
 - 편집이 처음엔 세션 루트인 옛 저장소(`pi-openrouter-catalog-filter`)에 들어가 되돌리고 여기로
   옮겼습니다. 이후 이 저장소에서만 작업합니다.
+
+### 8.6 점수 부여: 둘 다 "39점"의 실제 근거
+
+사용자 제보: 새로 추가한 두 모델이 모두 AAII 39점. AA 미러에서 직접 확인한 결과는 이렇습니다.
+
+| 모델 | AA 미러 | 기록한 값 |
+|---|---|---|
+| `muse-spark-open` | `meta/muse-spark-open` 존재 — **38.9**, variant "Muse Spark Open (Xhigh)", 2026-10-16 레코드 | 38.9 (반올림하면 39 — 파일은 AA의 원값을 적습니다) |
+| `deepseek-v4.1-flash-uncensored` | **항목 없음** (`deepseek/` 폴더에 uncensored 계열 없음) | `aliases`로 베이스 `deepseek-v4.1-flash`(39.5)에 연결, `aliasNotes`에 근거 기록 |
+
+`fetch-scores.mjs`의 `TARGETS`에도 두 키를 넣었습니다. `scores`는 스크립트가 재생성하므로
+여기에 넣지 않으면 다음 새로고침이 손으로 적은 항목을 지웁니다(`aliases`·`aliasNotes`는 원래
+carry-forward). `retrieved`는 마지막 **전체** 갱신일(2026-10-13) 그대로 두었습니다 — 27개 중
+하나를 손으로 더한 것이라 파일 전체 나이를 오늘로 낮추면 거짓이 됩니다.
+
+`sync` 적용 결과(백업 `litellm_config.yaml.bak-2026-10-17T00-29-18-013Z`, `check` up-to-date):
+
+```
+head  code-2-nvidia-deepseek-v4.1-flash         39.5 (daily)
+      code-4-explabs-deepseek-v4.1-flash        39.5 (monthly)
+      code-9-explabs-deepseek-v4.1-flash-uncensored  39.5 (별칭으로 베이스 점수)
+      code-8-explabs-muse-spark-open            38.9
+      code-7-qwen3.8-flash-next-iq3_s           미채점 → 마지막
+```
+
+미채점은 이제 code-7 하나뿐입니다. `node --test extensions/` → **160개 중 160개 통과**.

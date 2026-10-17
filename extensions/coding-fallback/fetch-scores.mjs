@@ -44,6 +44,13 @@ const SAMPLE = 4;
 
 /** Router model key -> its Artificial Analysis creator folder and slug. */
 const TARGETS = [
+  { key: "muse-spark-open", creator: "meta", slug: "muse-spark-open" },
+  {
+    key: "deepseek-v4.1-flash-uncensored",
+    creator: null,
+    slug: null,
+    note: "no AA entry; uncensored fine-tune of deepseek-v4.1-flash",
+  },
   { key: "qwen3.8-flash-next-uncensored", creator: null, slug: null, note: "no AA entry; uncensored fine-tune" },
   { key: "qwen3.8-flash-next", creator: "alibaba", slug: "qwen3-8-flash-next" },
   { key: "qwen3.8-flash-next-iq3_s", creator: null, slug: null, note: "no AA entry; local quant" },
