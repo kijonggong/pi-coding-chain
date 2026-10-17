@@ -313,6 +313,15 @@ Every refusal leaves the file byte-identical and the backup absent, so a refused
 | no AAII score is loaded | the guard `sync` already applies — ordering by quota tier alone replaces a considered order with an arbitrary one |
 | the config cannot be composed | `check` reports the same reason; nothing is written |
 
+One reading that is deliberately **not** a refusal: a chain with no member. Which
+chains a config runs is the operator's choice, and `model_list` can be trimmed to
+one of them — the live config was, on 2026-10-16, and every command refused it
+until this changed. A chain the file has no member for is skipped: it is left out
+of `model_group_alias` and `fallbacks` rather than invented, and the commands keep
+working on the rest. The `the config cannot be composed` refusal above still covers
+the case that means the file is not this package's to write at all: a `model_list`
+none of whose names belongs to a chain this module knows.
+
 The refusals are all-or-nothing for a batch as well: a model the file cannot take
 stops the whole batch, and the report names every entry that was not added, so
 "nothing was added" is never left ambiguous about what the confirmation agreed to.

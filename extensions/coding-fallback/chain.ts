@@ -501,7 +501,14 @@ export function reconcileFreeEntries(
 
 /**
  * Regenerate the fallback chains. Returns `ok: false` when the expected
- * structure is missing, so a caller never writes a config it did not understand.
+ * structure is missing, so a caller never writes a config it did not understand:
+ * no `model_group_alias` or `fallbacks` block, or a `model_list` none of whose
+ * names belongs to a chain this module knows.
+ *
+ * A chain with no member is not one of those refusals. Which chains a config
+ * runs is the operator's choice, and a file trimmed down to the coding chain
+ * alone is a config, not a config this module failed to read. It is composed
+ * without the missing chain, and the generated blocks say nothing about it.
  */
 export function composeCodingFallback(
   configText: string,
@@ -529,9 +536,7 @@ export function composeCodingFallback(
 
   for (const spec of CHAINS) {
     const members = orderChain(entries, spec, scores, freeKeys);
-    if (members.length === 0) {
-      return { ok: false, reason: `no model_list entries match chain "${spec.aliases[0]}"` };
-    }
+    if (members.length === 0) continue;
     layouts.push({ spec, members });
 
     const after = members.map((member) => member.name);
@@ -553,6 +558,15 @@ export function composeCodingFallback(
     if (before.length > 0 && before.join("\n") !== after.join("\n")) {
       reordered.push({ alias: spec.aliases[0], before, after });
     }
+  }
+
+  // Nothing matched any chain: this file is not the one this module composes,
+  // and writing it would mean replacing a structure that was never understood.
+  if (layouts.length === 0) {
+    return {
+      ok: false,
+      reason: `no model_list entries match ${CHAINS.map((spec) => `"${spec.aliases[0]}"`).join(" or ")}`,
+    };
   }
 
   const aliasLines = renderAliasBlock(layouts);

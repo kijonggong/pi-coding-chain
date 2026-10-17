@@ -1,15 +1,19 @@
 {
   "attribution": "Read directly from each upstream's own OpenAI-compatible /models listing, with the operator's key. No third party is involved and no price is estimated: a missing price is recorded as missing, not as zero.",
-  "retrieved": "2026-10-14T12:09:44.073Z",
+  "retrieved": "2026-10-17T00:23:32.957Z",
   "providers": [
     {
       "host": "api.experientiallabs.ai",
       "baseUrl": "https://api.experientiallabs.ai/v1",
       "endpoint": "https://api.experientiallabs.ai/v1/models",
-      "retrieved": "2026-10-14T12:09:44.073Z",
-      "listed": 294,
+      "retrieved": "2026-10-17T00:23:32.957Z",
+      "listed": 297,
       "free": [],
       "excluded": [
+        {
+          "id": "claude-sonnet-4",
+          "reason": "no-price"
+        },
         {
           "id": "ernie-4.5-vl-424b-a47b",
           "reason": "no-price"
@@ -19,11 +23,39 @@
           "reason": "no-price"
         },
         {
+          "id": "gpt-latest",
+          "reason": "no-price"
+        },
+        {
+          "id": "qwen-plus-2025-07-28",
+          "reason": "no-price"
+        },
+        {
+          "id": "qwen3-coder-plus",
+          "reason": "no-price"
+        },
+        {
           "id": "qwen3-max",
           "reason": "no-price"
         },
         {
+          "id": "qwen3-max-thinking",
+          "reason": "no-price"
+        },
+        {
+          "id": "qwen3-vl-8b-thinking",
+          "reason": "no-price"
+        },
+        {
           "id": "qwen3.6-max-preview",
+          "reason": "no-price"
+        },
+        {
+          "id": "tts-1",
+          "reason": "no-price"
+        },
+        {
+          "id": "whisper-1",
           "reason": "no-price"
         }
       ]

@@ -74,6 +74,21 @@ const SETTLED = (() => {
 
 const UNREADABLE = ["model_list:", "- model_name: code-1-a", ""].join("\n");
 
+/**
+ * A config whose `model_list` belongs to no chain this package composes. The
+ * generated blocks are there, the names are not, so every compose refuses it.
+ */
+const FOREIGN = CONFIG.replace(/^- model_name: (?:code|ds)-/gm, "- model_name: other-");
+
+/**
+ * The fixture without its DashScope member: one chain, not two. A config
+ * trimmed this way is still managed (the live config was, on 2026-10-16).
+ */
+const TRIMMED = CONFIG.replace(
+  "- model_name: ds-qwen3.5-27b\n  litellm_params:\n    model: openai/model-y\n    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1\n",
+  "",
+);
+
 interface Temp {
   readonly dir: string;
   readonly config: string;
@@ -252,21 +267,43 @@ test("a name already in model_list is refused without a write", async () => {
   }
 });
 
-test("a config it does not understand is refused, and the entry is not left behind", async () => {
-  // The DashScope chain has no member left, so every compose refuses this file.
-  const broken = CONFIG.replace("- model_name: ds-qwen3.5-27b\n  litellm_params:\n    model: openai/model-y\n    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1\n", "");
-  const temp = await makeTemp(broken, SCORE_JSON);
+test("a config trimmed to one chain is still composed and written", async () => {
+  // One chain with no member is not a config this module fails to read: the
+  // missing chain is skipped, and the generated blocks say nothing about it.
+  const temp = await makeTemp(TRIMMED, SCORE_JSON);
   try {
     const result = await addModel(temp.config, temp.scores, undefined, {
-      name: "code-3-nvidia-model-x",
+      name: "code-3-nvidia-model-z",
+      modelId: "model-z",
+      baseUrl: "https://integrate.api.nvidia.com/v1",
+    });
+
+    assert.equal(result.state, "written", result.message);
+    const written = await readFile(temp.config, "utf8");
+    assert.match(written, /^- model_name: code-3-nvidia-model-z$/m);
+    assert.doesNotMatch(written, /dashscope-coding-fallback/, "a chain that is not there is not invented");
+    assert.doesNotMatch(written, /qwen-quota-fallback/);
+    assert.equal((await checkFallback(temp.config, temp.scores)).state, "up-to-date");
+  } finally {
+    await cleanup(temp.dir);
+  }
+});
+
+test("a config it does not understand is refused, and the entry is not left behind", async () => {
+  // Neither the entry being added nor anything already in the file belongs to a
+  // chain this module composes, so the file is not its to rewrite.
+  const temp = await makeTemp(FOREIGN, SCORE_JSON);
+  try {
+    const result = await addModel(temp.config, temp.scores, undefined, {
+      name: "other-3-nvidia-model-x",
       modelId: "model-x",
       baseUrl: "https://integrate.api.nvidia.com/v1",
     });
 
     assert.equal(result.state, "error");
-    assert.match(result.message, /code-3-nvidia-model-x was not added/);
-    assert.match(result.message, /dashscope-coding-fallback/);
-    assert.equal(await readFile(temp.config, "utf8"), broken, "the config must be untouched");
+    assert.match(result.message, /other-3-nvidia-model-x was not added/);
+    assert.match(result.message, /no model_list entries match "coding-fallback" or "dashscope-coding-fallback"/);
+    assert.equal(await readFile(temp.config, "utf8"), FOREIGN, "the config must be untouched");
     assert.deepEqual((await readdir(temp.dir)).sort(), ["aaii-scores.json", "litellm_config.yaml"]);
   } finally {
     await cleanup(temp.dir);
@@ -298,18 +335,16 @@ test("a batch is one write, one backup, and the chains pick it up", async () => 
 });
 
 test("a batch the file cannot take is refused whole, and named back", async () => {
-  // The DashScope chain has no member left, so every compose refuses this file.
-  const broken = CONFIG.replace("- model_name: ds-qwen3.5-27b\n  litellm_params:\n    model: openai/model-y\n    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1\n", "");
-  const temp = await makeTemp(broken, SCORE_JSON);
+  const temp = await makeTemp(FOREIGN, SCORE_JSON);
   try {
     const result = await addModels(temp.config, temp.scores, undefined, [
-      { name: "code-3-nvidia-model-z", modelId: "model-z", baseUrl: "https://integrate.api.nvidia.com/v1" },
-      { name: "code-4-nvidia-model-x", modelId: "model-x", baseUrl: "https://integrate.api.nvidia.com/v1" },
+      { name: "other-3-nvidia-model-z", modelId: "model-z", baseUrl: "https://integrate.api.nvidia.com/v1" },
+      { name: "other-4-nvidia-model-x", modelId: "model-x", baseUrl: "https://integrate.api.nvidia.com/v1" },
     ]);
 
     assert.equal(result.state, "error");
-    assert.match(result.message, /none of code-3-nvidia-model-z, code-4-nvidia-model-x was added/);
-    assert.equal(await readFile(temp.config, "utf8"), broken, "the config must be untouched");
+    assert.match(result.message, /none of other-3-nvidia-model-z, other-4-nvidia-model-x was added/);
+    assert.equal(await readFile(temp.config, "utf8"), FOREIGN, "the config must be untouched");
     assert.deepEqual((await readdir(temp.dir)).sort(), ["aaii-scores.json", "litellm_config.yaml"]);
   } finally {
     await cleanup(temp.dir);

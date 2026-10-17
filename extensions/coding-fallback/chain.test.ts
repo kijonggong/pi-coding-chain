@@ -229,6 +229,59 @@ test("leaves everything outside the two generated blocks untouched", async (t) =
   );
 });
 
+/** Drop one `- model_name:` block, so a fixture can be built with a chain emptied. */
+function withoutModel(text: string, name: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => line === `- model_name: ${name}`);
+  assert.notEqual(start, -1, `no entry named ${name}`);
+  let end = start + 1;
+  while (end < lines.length && !lines[end].startsWith("- model_name:") && !lines[end].startsWith("router_settings:")) {
+    end += 1;
+  }
+  return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
+}
+
+test("a chain with no member is left out rather than refused", () => {
+  // A config trimmed down to one chain is still a config this module composes.
+  const only = withoutModel(withoutModel(SYNTHETIC, "code-3-dashscope"), "ds-qwen3.5-27b");
+  const outcome = composeCodingFallback(only, FIXTURE_SCORES);
+  assert.equal(outcome.ok, true, outcome.ok ? "" : outcome.reason);
+  if (!outcome.ok) return;
+
+  assert.deepEqual(outcome.chains.map((chain) => chain.alias), ["coding-fallback"]);
+  // The head is in the alias block; the fallback list below it starts at the
+  // second member, which is what generatedOrder reads.
+  assert.equal(outcome.chains[0].head, "code-2-nvidia");
+  assert.equal(generatedOrder(outcome.text, "coding-fallback")[0], "code-1-explabs");
+  assert.doesNotMatch(outcome.text, /dashscope-coding-fallback/);
+  assert.doesNotMatch(outcome.text, /qwen-quota-fallback/);
+  assert.doesNotMatch(outcome.text, /ds-qwen3.5-27b/);
+});
+
+test("refuses a config whose model_list belongs to no chain at all", () => {
+  const outcome = composeCodingFallback(
+    [
+      "model_list:",
+      "- model_name: other-1",
+      "  litellm_params:",
+      "    model: openai/other",
+      "    api_base: https://example.invalid/v1",
+      "router_settings:",
+      "  model_group_alias:",
+      "    coding-fallback: stale",
+      "  fallbacks:",
+      "  - stale:",
+      "    - stale",
+      "",
+    ].join("\n"),
+    FIXTURE_SCORES,
+  );
+
+  assert.equal(outcome.ok, false);
+  if (outcome.ok) return;
+  assert.match(outcome.reason, /no model_list entries match/);
+});
+
 test("refuses a config whose generated blocks are missing", () => {
   const outcome = composeCodingFallback("model_list:\n- model_name: code-1-a\n", FIXTURE_SCORES);
   assert.equal(outcome.ok, false);

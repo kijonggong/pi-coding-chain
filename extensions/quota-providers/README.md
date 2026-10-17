@@ -59,10 +59,16 @@ provider.
 matching the rest of this configuration). The endpoint also resells third-party
 models, which is why one provider carries Qwen, Kimi, and GLM ids.
 
-`explabs` — 2 chat models. Unlike the other upstreams, ExpLabs publishes
+`explabs` — 4 chat models. Unlike the other upstreams, ExpLabs publishes
 per-token pricing rather than a metered allowance, so these entries carry the
-endpoint's real rates ($0.30/1.20 per Mtok uncached for DeepSeek V4.1 Flash,
-$0.15/0.47 for Qwen3.8 Flash-Next Uncensored) instead of zero.
+endpoint's real rates ($0.30/1.20 per Mtok uncached for DeepSeek V4.1 Flash and
+its uncensored variant, $0.15/0.47 for Qwen3.8 Flash-Next Uncensored,
+$1.24/4.24 for Muse Spark Open) instead of zero.
+
+Muse Spark Open is the one model on this host that answers while the account has
+no platform credits — every priced model returns `insufficient_credits` and this
+one returns `usage.cost: 0` — so its entry carries the published figure, not the
+promotion, and `catalog.ts` records which of the two the numbers are.
 
 ## Where the limits come from
 

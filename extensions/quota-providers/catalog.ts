@@ -176,6 +176,32 @@ export const EXPLABS: ProviderSpec = {
       source: "endpoint",
     },
     {
+      id: "deepseek-v4.1-flash-uncensored",
+      name: "DeepSeek V4.1 Flash Uncensored (ExpLabs)",
+      input: ["text"],
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0.3 },
+      contextWindow: 1048576,
+      maxTokens: 393216,
+      reasoning: true,
+      source: "endpoint",
+    },
+    // The published figure is not what this account pays: on 2026-10-17 a
+    // 1-token request to `muse-spark-open` answered 200 with `cost: 0` while
+    // every priced model on the same key answered `insufficient_credits` with a
+    // negative balance. It is registered rather than excluded because it is the
+    // one model on this host that answers at all, and the figures below are
+    // still what the endpoint publishes — the promotion is not a limit.
+    {
+      id: "muse-spark-open",
+      name: "Muse Spark Open (ExpLabs)",
+      input: ["text"],
+      cost: { input: 1.24, output: 4.24, cacheRead: 0.14, cacheWrite: 0 },
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      reasoning: false,
+      source: "endpoint",
+    },
+    {
       id: "qwen3.8-flash-next-uncensored",
       name: "Qwen3.8 Flash-Next Uncensored (ExpLabs)",
       input: ["text"],
