@@ -10,7 +10,7 @@ import type registerRouterType from "./index.ts";
 import type { RouterState } from "./index.ts";
 import { DEFAULT_SETTINGS, SETTINGS, saveSettings } from "./settings.ts";
 import type { Settings } from "./settings.ts";
-import { sdkStubPackages } from "./test-support.ts";
+import { sdkStubPackages, VIRTUAL_MODEL_STATE_ENTRY } from "./test-support.ts";
 
 let moduleDirectory: string;
 let registerRouter: typeof registerRouterType;
@@ -20,7 +20,7 @@ after(async () => { await moduleHarness?.cleanup(); });
 
 before(async () => {
   const modules = [
-    ...["index.ts", "candidates.ts", "chain-order.ts", "cooldown.ts", "settings.ts", "fallback-editor.ts", "fallback-tui.ts"]
+    ...["index.ts", "candidates.ts", "chain-order.ts", "cooldown.ts", "routes.ts", "settings.ts", "fallback-editor.ts", "fallback-tui.ts"]
       .map((name) => [`aaii-router/${name}`, new URL(name, import.meta.url)] as const),
     ...["providers.ts", "scores.ts"]
       .map((name) => [`coding-fallback/${name}`, new URL(`../coding-fallback/${name}`, import.meta.url)] as const),
@@ -33,7 +33,15 @@ before(async () => {
 type Route = Parameters<ExtensionAPI["registerVirtualModel"]>[0]["route"];
 type Request = Parameters<Route>[0];
 
-async function harness(t: { after: (cleanup: () => Promise<void>) => void }, initial: Settings = DEFAULT_SETTINGS) {
+async function harness(
+  t: { after: (cleanup: () => Promise<void>) => void },
+  initial: Settings = DEFAULT_SETTINGS,
+  models: object[] = [
+    { provider: "one", id: "a", api: "test", input: ["text"], baseUrl: "https://one.example/v1" },
+    { provider: "two", id: "b", api: "test", input: ["text"], baseUrl: "https://two.example/v1" },
+    { provider: "three", id: "c", api: "test", input: ["text"], baseUrl: "https://three.example/v1" },
+  ],
+) {
   const directory = await mkdtemp(join(tmpdir(), "aaii-router-command-"));
   const envKeys = ["PI_AAII_ROUTER_SETTINGS", "PI_CODING_FALLBACK_SCORES", ...SETTINGS.map((entry) => entry.envVar)];
   const savedEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
@@ -44,27 +52,26 @@ async function harness(t: { after: (cleanup: () => Promise<void>) => void }, ini
   await writeFile(process.env.PI_CODING_FALLBACK_SCORES, JSON.stringify({ scores: {
     a: { score: 90 }, b: { score: 60 }, c: { score: 30 },
   } }));
-  const models = [
-    { provider: "one", id: "a", api: "test", input: ["text"], baseUrl: "https://one.example/v1" },
-    { provider: "two", id: "b", api: "test", input: ["text"], baseUrl: "https://two.example/v1" },
-    { provider: "three", id: "c", api: "test", input: ["text"], baseUrl: "https://three.example/v1" },
-  ];
-  let route!: Route;
+  const routes = new Map<string, Route>();
   let command!: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
   let sessionStart!: (event: unknown, ctx: ExtensionCommandContext) => void;
   registerRouter({
-    registerVirtualModel: (definition) => { route = definition.route; },
+    registerVirtualModel: (definition) => { routes.set(definition.id, definition.route); },
     registerCommand: (_name, definition) => { command = definition.handler; },
     on: (event, handler) => { if (event === "session_start") sessionStart = handler; },
   } as ExtensionAPI);
+  const route = routes.get("aaii")!;
   let choice = "Done";
   let answer = "";
   let keys: string[] = [];
   const notifications: { message: string; type?: string }[] = [];
   const statuses: (string | undefined)[] = [];
+  // The branch the router records state on: one custom entry per returned
+  // state, newest last, the way a session accumulates them.
+  const branch: object[] = [];
   const ctx = {
     cwd: directory, hasUI: true, mode: "tui", isProjectTrusted: () => false,
-    sessionManager: { getBranch: () => [] },
+    sessionManager: { getBranch: () => branch },
     modelRegistry: {
       getModelsOfType: () => models, hasConfiguredAuth: () => true,
       find: (provider: string, id: string) => models.find((model) => model.provider === provider && model.id === id),
@@ -93,9 +100,20 @@ async function harness(t: { after: (cleanup: () => Promise<void>) => void }, ini
   const request = (state?: RouterState, extra: object = {}) => route({
     reason: "turn", messages: [], thinkingLevel: "off", state, ...extra,
   } as Request, ctx);
+  /** Route a request against one virtual model, e.g. `deepseek-v4.1-flash`. */
+  const requestOn = async (id: string, state?: RouterState, extra: object = {}) => {
+    const routed = await routes.get(id)!(
+      { reason: "turn", messages: [], thinkingLevel: "off", state, ...extra } as Request, ctx,
+    );
+    branch.push({ type: "custom", customType: VIRTUAL_MODEL_STATE_ENTRY, data: { provider: "fallback", modelId: id, state: routed.state } });
+    return routed;
+  };
   return {
     directory,
     request,
+    requestOn,
+    /** The session branch double, so a test can add a `model_change`. */
+    branch,
     remember: async (index: number) => (await request(undefined, {
       reason: "continuation", previous: { model: models[index] },
     })).state as RouterState,
@@ -310,4 +328,70 @@ test("set and reset refresh the status line and report environment overrides", a
     { message: `aaii-router: defaults written to ${process.env.PI_AAII_ROUTER_SETTINGS}`, type: "info" },
     { message: "aaii-router: PI_AAII_ROUTER_VISION still override this session", type: "warning" },
   ]);
+});
+
+test("a family route orders by the quota that replenishes soonest and steps past a failure", async (t) => {
+  const models = [
+    { provider: "explabs", id: "deepseek-v4.1-flash", api: "test", input: ["text"], baseUrl: "https://api.experientiallabs.ai/v1" },
+    { provider: "hive", id: "deepseek-ai/deepseek-v4.1-flash-1017", api: "test", input: ["text"], baseUrl: "https://api.thehive.ai/api/v3" },
+    { provider: "nvidia", id: "deepseek-ai/deepseek-v4.1-flash", api: "test", input: ["text"], baseUrl: "https://integrate.api.nvidia.com/v1" },
+    { provider: "zcode", id: "GLM-5.3-Flash", api: "test", input: ["text"], baseUrl: "https://zcode.example/v1" },
+  ];
+  const h = await harness(t, DEFAULT_SETTINGS, models);
+  // Tier order inside the family: daily (nvidia) < monthly (explabs) < unclassified (hive).
+  const first = await h.requestOn("deepseek-v4.1-flash");
+  assert.equal(first.state.label, "nvidia/deepseek-ai/deepseek-v4.1-flash");
+  assert.equal(h.statuses.at(-1), "deepseek-v4.1-flash → nvidia/deepseek-ai/deepseek-v4.1-flash");
+  // A failure steps to the next tier and cools the failed one for the next turn.
+  const retried = await h.requestOn("deepseek-v4.1-flash", first.state, {
+    reason: "retry",
+    failed: { model: models[2], message: { stopReason: "error", errorMessage: "429 too many requests" } },
+  });
+  assert.equal(retried.state.label, "explabs/deepseek-v4.1-flash");
+  const nextTurn = await h.requestOn("deepseek-v4.1-flash", retried.state);
+  assert.equal(nextTurn.state.label, "explabs/deepseek-v4.1-flash");
+  // The glm-5.3-flash route only sees the flash variant; GLM-5.3 proper is out.
+  const glm = await h.requestOn("glm-5.3-flash");
+  assert.equal(glm.state.label, "zcode/GLM-5.3-Flash");
+});
+
+test("a family route with no candidate refuses rather than guessing a model", async (t) => {
+  const h = await harness(t);
+  await assert.rejects(h.requestOn("glm-5.3-flash"), /\[aaii-router\/glm-5.3-flash\] no eligible model/);
+});
+
+test("next steps past the head of the route the session is on, not the full chain's", async (t) => {
+  const models = [
+    { provider: "nvidia", id: "deepseek-ai/deepseek-v4.1-flash", api: "test", input: ["text"], baseUrl: "https://integrate.api.nvidia.com/v1" },
+    { provider: "zcode", id: "GLM-5.3-Flash", api: "test", input: ["text"], baseUrl: "https://zcode.example/v1" },
+    { provider: "explabs", id: "glm-5.3-flash-free", api: "test", input: ["text"], baseUrl: "https://api.experientiallabs.ai/v1" },
+  ];
+  const h = await harness(t, DEFAULT_SETTINGS, models);
+  // No state yet: `next` falls back to the full chain's head (nvidia, daily tier).
+  await h.command("next");
+  assert.match(h.notifications.at(-1)!.message, /nvidia\/deepseek-ai\/deepseek-v4\.1-flash is out/);
+  // A glm-5.3-flash session: the family's own head is explabs (monthly tier;
+  // zcode is unclassified), so `next` names that, not the full chain's nvidia.
+  const glm = await h.requestOn("glm-5.3-flash");
+  assert.equal(glm.state.label, "explabs/glm-5.3-flash-free");
+  await h.command("next");
+  assert.match(h.notifications.at(-1)!.message, /explabs\/glm-5\.3-flash-free is out/);
+  // The manual cooldown moved the family route to its second candidate.
+  assert.equal((await h.requestOn("glm-5.3-flash", glm.state)).state.label, "zcode/GLM-5.3-Flash");
+});
+
+test("a model_change away from a recorded state drops the stale label", async (t) => {
+  const models = [
+    { provider: "nvidia", id: "deepseek-ai/deepseek-v4.1-flash", api: "test", input: ["text"], baseUrl: "https://integrate.api.nvidia.com/v1" },
+    { provider: "zcode", id: "GLM-5.3-Flash", api: "test", input: ["text"], baseUrl: "https://zcode.example/v1" },
+  ];
+  const h = await harness(t, DEFAULT_SETTINGS, models);
+  const glm = await h.requestOn("glm-5.3-flash");
+  // The operator switches the session to the deepseek route: the glm state
+  // must not leak into `next`, which would cool a model deepseek never walks.
+  h.branch.push({ type: "model_change", provider: "fallback", modelId: "deepseek-v4.1-flash" });
+  await h.command("next");
+  assert.match(h.notifications.at(-1)!.message, /nvidia\/deepseek-ai\/deepseek-v4\.1-flash is out/);
+  // The deepseek route starts from its own head; the glm state did not leak.
+  assert.equal((await h.requestOn("deepseek-v4.1-flash", glm.state)).state.label, "nvidia/deepseek-ai/deepseek-v4.1-flash");
 });

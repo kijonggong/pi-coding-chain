@@ -120,5 +120,6 @@ config sends to these two hosts is either registered or explicitly excluded.
 ## Verify
 
 `pi --list-models` should show `dashscope` (7 models) and `explabs` (5), and
-`pi --list-models aaii` should still show `aaii/fallback`. Then run
+`pi --list-models fallback` should still show the three virtual models:
+`fallback/aaii`, `fallback/deepseek-v4.1-flash` and `fallback/glm-5.3-flash`. Then run
 `/aaii-router` and confirm the candidate list reaches tier 3 and tier 4 hosts.

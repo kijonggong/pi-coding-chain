@@ -6,7 +6,7 @@ fail-over, whether a request goes through a LiteLLM proxy or straight from Pi.
 | Extension | Command | Role |
 |---|---|---|
 | [`coding-fallback`](extensions/coding-fallback/README.md) | `/coding-fallback` | Compose the LiteLLM router config: `model_group_alias` and `fallbacks` are regenerated from `model_list`, ordered by AAII score, with a picker that registers a model on an upstream the config already has |
-| [`aaii-router`](extensions/aaii-router/README.md) | `/aaii-router` | Register `aaii/fallback`, a virtual model that walks the same order inside Pi — no proxy, no `fallbacks` matrix |
+| [`aaii-router`](extensions/aaii-router/README.md) | `/aaii-router` | Register three virtual models under a `fallback` provider — `fallback/aaii` (full chain), `fallback/deepseek-v4.1-flash` and `fallback/glm-5.3-flash` (family-scoped) — that walk the same order inside Pi — no proxy, no `fallbacks` matrix |
 | [`quota-providers`](extensions/quota-providers/README.md) | `/quota-providers` | Register the `monthly` and `credit` hosts as real Pi providers, which is what makes those tiers reachable as candidates |
 | [`openrouter-catalog-filter`](extensions/openrouter-catalog-filter/README.md) | `/openrouter-catalog-filter` | Keep OpenRouter's catalog aligned with the remote one (independent of the chain) |
 

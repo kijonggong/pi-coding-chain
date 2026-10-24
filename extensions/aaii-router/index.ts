@@ -1,11 +1,14 @@
 /**
- * Pi extension: an AAII-ordered fail-over router that calls providers directly.
+ * Pi extension: AAII-ordered fail-over routers that call providers directly.
  *
- * It registers `aaii/fallback`, a virtual model. Pi picks it like any other
- * model, and for each request the router chooses a physical model from the
- * providers this Pi already has credentials for. When a request fails, Pi
- * retries; the router sees `reason: "retry"` with the model that failed and
- * returns the next one in the order.
+ * It registers one virtual provider, `fallback`, with three models Pi picks
+ * like any other: `fallback/aaii` walks every candidate in the policy order,
+ * and `fallback/deepseek-v4.1-flash` and `fallback/glm-5.3-flash` walk only
+ * the candidates that serve that model family, keeping the same order, failure
+ * memory and stickiness inside the shorter list. For each request a router
+ * chooses a physical model from the providers this Pi already has credentials
+ * for. When a request fails, Pi retries; the router sees `reason: "retry"` with
+ * the model that failed and returns the next one in the order.
  *
  * The order is the same one the LiteLLM config composer uses: Artificial
  * Analysis Intelligence Index descending first, then the quota tier that
@@ -91,6 +94,8 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  ModelRoute,
+  ModelRouteRequest,
   VirtualModelStateData,
 } from "@earendil-works/pi-coding-agent";
 
@@ -134,9 +139,9 @@ import {
 import type { SettingDescriptor, Settings } from "./settings.ts";
 import { loadScores, resolveScoresPath } from "../coding-fallback/scores.ts";
 import type { ScoreSnapshot } from "../coding-fallback/scores.ts";
+import { PROVIDER, ROUTES, candidatesForRoute } from "./routes.ts";
+import type { RouteDefinition } from "./routes.ts";
 
-const PROVIDER = "aaii";
-const MODEL_ID = "fallback";
 const COMMAND = "aaii-router";
 const STATUS_KEY = "aaii-router";
 
@@ -168,6 +173,13 @@ function bumpChainEpoch(): void {
  * The command cannot write the session itself — `ctx.sessionManager` is
  * read-only — so it leaves the entry here for the next `route()` to pick up,
  * and `route()` clears it as it takes it.
+ *
+ * The entry is a property of the physical model, not of a route, so whichever
+ * virtual model serves the next request takes it: an entry for a model that
+ * route does not walk is inert there, but it is consumed — if the next request
+ * goes through a different route than the operator's `next` meant, the manual
+ * step lives on only in that route's state. `/aaii-router next` reads the
+ * session's route to name the right model in the first place.
  */
 let pendingCooldowns: CooldownMap = {};
 
@@ -263,16 +275,42 @@ async function registry(ctx: ExtensionContext, settings: Settings): Promise<Regi
   return cache;
 }
 
-/** The router state the branch recorded last, if any. */
-function branchState(ctx: ExtensionContext | undefined): RouterState | undefined {
-  if (!ctx) return undefined;
+/** What the session branch last recorded for this extension's virtual models:
+ * the router state, and which route recorded it. Reading the branch also
+ * picks up a `model_change` to a route with no state yet, so the command can
+ * act on the route the session is on rather than the full chain's head. */
+interface BranchSelection {
+  readonly routeId?: string;
+  readonly state?: RouterState;
+}
+
+function branchSelection(ctx: ExtensionContext | undefined): BranchSelection {
+  if (!ctx) return {};
   const branch = ctx.sessionManager.getBranch();
+  let routeId: string | undefined;
   for (const entry of [...branch].reverse()) {
+    if (entry.type === "model_change" && entry.provider === PROVIDER) {
+      const changed = ROUTES.some((route) => route.id === entry.modelId) ? entry.modelId : undefined;
+      if (changed !== undefined) routeId = changed;
+      continue;
+    }
     if (entry.type !== "custom" || entry.customType !== VIRTUAL_MODEL_STATE_ENTRY) continue;
     const data = (entry as CustomEntry<VirtualModelStateData<RouterState>>).data;
-    if (data?.provider === PROVIDER && data.modelId === MODEL_ID) return data.state;
+    if (data?.provider !== PROVIDER || !ROUTES.some((route) => route.id === data.modelId)) continue;
+    // A model_change after this state switched the session to another route, so
+    // the state belongs to a route the session left: the route selection
+    // stands, the state does not. Cooling that stale label would bench a model
+    // the new route never walks.
+    if (routeId !== undefined && routeId !== data.modelId) return { routeId };
+    return { routeId: routeId ?? data.modelId, state: data.state };
   }
-  return undefined;
+  return { routeId };
+}
+
+/** The router state the branch recorded last, if any, for whichever route the
+ * session is on. */
+function branchState(ctx: ExtensionContext | undefined): RouterState | undefined {
+  return branchSelection(ctx).state;
 }
 
 /** The cooldown map in force now: what the branch recorded, plus what a command just set. */
@@ -292,12 +330,15 @@ function resolve(ctx: ExtensionContext, candidate: Candidate | undefined) {
   return ctx.modelRegistry.find(candidate.provider, candidate.id);
 }
 
-/** Publish status through the SDK UI, which is a no-op when headless. */
+/** Publish status through the SDK UI, which is a no-op when headless. The
+ * cooling count is taken over the route's own candidates, so a family route
+ * never reports a full-chain cooldown it cannot even walk. */
 function publishStatus(
   ctx: ExtensionContext,
+  routeId: string,
   label: string | undefined,
   cooldowns: CooldownMap,
-  total: number,
+  ordered: readonly { label: string }[],
   now: number,
   enabled: boolean,
 ): void {
@@ -305,8 +346,8 @@ function publishStatus(
     ctx.ui.setStatus(STATUS_KEY, undefined);
     return;
   }
-  const cooling = coolingLabels(cooldowns, now).length;
-  ctx.ui.setStatus(STATUS_KEY, `${PROVIDER} → ${label}${cooling > 0 ? ` · ${cooling}/${total} cooling` : ""}`);
+  const cooling = ordered.filter((candidate) => coolingFor(cooldowns, candidate.label, now) !== undefined).length;
+  ctx.ui.setStatus(STATUS_KEY, `${routeId} → ${label}${cooling > 0 ? ` · ${cooling}/${ordered.length} cooling` : ""}`);
 }
 
 function report(
@@ -392,7 +433,7 @@ async function commitSettings(
   await saveSettings(path, after);
   if (routingChanged(before, after)) bumpChainEpoch();
   forget();
-  publishStatus(ctx, undefined, {}, 0, Date.now(), false);
+  ctx.ui.setStatus(STATUS_KEY, undefined);
   ctx.ui?.notify?.(infoMessage, "info");
   const held = envHeldKeys();
   if (held.length > 0) {
@@ -488,69 +529,15 @@ async function openFallbackEditor(ctx: ExtensionCommandContext): Promise<void> {
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerVirtualModel<RouterState>({
-    provider: PROVIDER,
-    id: MODEL_ID,
-    name: "AAII fallback (providers direct)",
-    thinkingLevels: ["off", "minimal", "low", "medium", "high"],
-    async route(request, ctx) {
-      const settings = await currentSettings(ctx);
-      const { candidates } = await registry(ctx, settings);
-      const now = Date.now();
-      const window = settings.cooldownMs;
-      const carried = { ...request.state?.cooldowns, ...pendingCooldowns };
-      pendingCooldowns = {};
-      const cooldowns = pruneCooldowns(carried, now);
-      const ordered = orderForRequest(
-        applyChainSettings(candidates, settings),
-        settings.preferVision && containsImage(request.messages),
-      );
-
-      const head = ordered[0];
-      if (!head) {
-        throw new Error(
-          `[${COMMAND}] no eligible model: every chat model with credentials is unavailable or excluded by the settings`,
-        );
-      }
-
-      const stick = (candidate: Candidate, next: CooldownMap, epoch = chainEpoch) => {
-        const model = resolve(ctx, candidate);
-        if (!model) throw new Error(`[${COMMAND}] ${candidate.label} is no longer in the catalog`);
-        publishStatus(ctx, candidate.label, next, ordered.length, now, settings.statusLine);
-        return { model, thinkingLevel: request.thinkingLevel, state: { label: candidate.label, cooldowns: next, epoch } };
-      };
-
-      // Never move the chain on a follow-up: keeping the model keeps the prompt cache.
-      if (request.reason === "continuation") {
-        const previous = request.previous?.model;
-        const sticky = ordered.find(
-          (candidate) => candidate.provider === previous?.provider && candidate.id === previous?.id,
-        );
-        if (sticky) return stick(sticky, cooldowns, request.state?.epoch ?? chainEpoch);
-        const remembered = ordered.find((candidate) => candidate.label === request.state?.label);
-        return stick(remembered ?? head, cooldowns, request.state?.epoch ?? chainEpoch);
-      }
-
-      // A failed request: remember why, then step past the model that failed.
-      if (request.reason === "retry" && request.failed) {
-        const failed = request.failed.model;
-        const failedLabel = `${failed.provider}/${failed.id}`;
-        const signal = classifyFailure(request.failed.message);
-        const next = remembers(signal) ? rememberFailure(cooldowns, failedLabel, signal, now, window) : cooldowns;
-        const candidate = stepForward(ordered, next, failedLabel, now);
-        if (!candidate) {
-          throw new Error(
-            `[${COMMAND}] ${failedLabel} failed and the chain is exhausted after ${ordered.length} candidates`,
-          );
-        }
-        return stick(candidate, next, chainEpoch);
-      }
-
-      // A new user turn, or a request outside the agent loop.
-      const candidate = chooseTurnCandidate(ordered, cooldowns, request.state, chainEpoch, now);
-      return stick(candidate, cooldowns, chainEpoch);
-    },
-  });
+  for (const route of ROUTES) {
+    pi.registerVirtualModel<RouterState>({
+      provider: PROVIDER,
+      id: route.id,
+      name: route.name,
+      thinkingLevels: ["off", "minimal", "low", "medium", "high"],
+      route: routeFor(route),
+    });
+  }
 
   pi.registerCommand(COMMAND, {
     description: "List the candidates, edit the chain or the settings, or step past the current model",
@@ -639,7 +626,14 @@ export default function (pi: ExtensionAPI) {
       if (subcommand === "next") {
         const settings = await currentSettings(ctx);
         const { candidates } = await registry(ctx, settings);
-        const label = branchState(ctx)?.label ?? applyChainSettings(candidates, settings)[0]?.label;
+        // Step past what the session is actually on: the state's route when the
+        // branch has one, else the `model_change` selection, else the full
+        // chain's head. Cooling a family-route head from the full chain's head
+        // would be a model that route never walks.
+        const selection = branchSelection(ctx);
+        const route = ROUTES.find((entry) => entry.id === selection.routeId);
+        const ordered = candidatesForRoute(route ?? ROUTES[0], applyChainSettings(candidates, settings));
+        const label = selection.state?.label ?? ordered[0]?.label;
         if (!label) {
           ctx.ui?.notify?.(`${COMMAND}: no candidate to step past`, "warning");
           return;
@@ -679,4 +673,82 @@ export default function (pi: ExtensionAPI) {
     pendingCooldowns = {};
     ctx.ui.setStatus(STATUS_KEY, undefined);
   });
+}
+
+/** The tag one route's errors carry. The full-chain route keeps the plain
+ * command name; a family route says which family it walks. The discriminator
+ * is `family`, the same one the candidate list and the error wording use. */
+function routeTag(route: RouteDefinition): string {
+  return route.family === undefined ? COMMAND : `${COMMAND}/${route.id}`;
+}
+
+/**
+ * `route` for one virtual model: the fail-over walk the aaii router has always
+ * done, over that route's candidates. The aaii route walks all of them; a
+ * family route walks only the candidates `routes.ts` says serve its family,
+ * with the same order, failure memory and stickiness inside the shorter list.
+ */
+function routeFor(route: RouteDefinition) {
+  const tag = routeTag(route);
+  return async (
+    request: ModelRouteRequest<RouterState>,
+    ctx: ExtensionContext,
+  ): Promise<ModelRoute<RouterState>> => {
+    const settings = await currentSettings(ctx);
+    const { candidates } = await registry(ctx, settings);
+    const now = Date.now();
+    const window = settings.cooldownMs;
+    const carried = { ...request.state?.cooldowns, ...pendingCooldowns };
+    pendingCooldowns = {};
+    const cooldowns = pruneCooldowns(carried, now);
+    const ordered = orderForRequest(
+      candidatesForRoute(route, applyChainSettings(candidates, settings)),
+      settings.preferVision && containsImage(request.messages),
+    );
+
+    const head = ordered[0];
+    if (!head) {
+      throw new Error(
+        `[${tag}] no eligible model: no chat model with credentials serves ${
+          route.family === undefined ? "the chain" : `the ${route.id} family`
+        }, or the settings excluded it`,
+      );
+    }
+
+    const stick = (candidate: Candidate, next: CooldownMap, epoch = chainEpoch) => {
+      const model = resolve(ctx, candidate);
+      if (!model) throw new Error(`[${tag}] ${candidate.label} is no longer in the catalog`);
+      publishStatus(ctx, route.id, candidate.label, next, ordered, now, settings.statusLine);
+      return { model, thinkingLevel: request.thinkingLevel, state: { label: candidate.label, cooldowns: next, epoch } };
+    };
+
+    // Never move the chain on a follow-up: keeping the model keeps the prompt cache.
+    if (request.reason === "continuation") {
+      const previous = request.previous?.model;
+      const sticky = ordered.find(
+        (candidate) => candidate.provider === previous?.provider && candidate.id === previous?.id,
+      );
+      if (sticky) return stick(sticky, cooldowns, request.state?.epoch ?? chainEpoch);
+      const remembered = ordered.find((candidate) => candidate.label === request.state?.label);
+      return stick(remembered ?? head, cooldowns, request.state?.epoch ?? chainEpoch);
+    }
+    // A failed request: remember why, then step past the model that failed.
+    if (request.reason === "retry" && request.failed) {
+      const failed = request.failed.model;
+      const failedLabel = `${failed.provider}/${failed.id}`;
+      const signal = classifyFailure(request.failed.message);
+      const next = remembers(signal) ? rememberFailure(cooldowns, failedLabel, signal, now, window) : cooldowns;
+      const candidate = stepForward(ordered, next, failedLabel, now);
+      if (!candidate) {
+        throw new Error(
+          `[${tag}] ${failedLabel} failed and the chain is exhausted after ${ordered.length} candidates`,
+        );
+      }
+      return stick(candidate, next, chainEpoch);
+    }
+
+    // A new user turn, or a request outside the agent loop.
+    const candidate = chooseTurnCandidate(ordered, cooldowns, request.state, chainEpoch, now);
+    return stick(candidate, cooldowns, chainEpoch);
+  };
 }

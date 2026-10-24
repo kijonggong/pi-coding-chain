@@ -29,8 +29,13 @@ export function getKeybindings() {
 }
 `;
 
-const SDK_STUB = `
+/** The session entry type Pi's SDK records virtual-model state under. The
+ * stub package re-exports this value, so the harness and the stub cannot
+ * disagree about what the constant is. */
 export const VIRTUAL_MODEL_STATE_ENTRY = "virtual_model_state";
+
+const SDK_STUB = `
+export const VIRTUAL_MODEL_STATE_ENTRY = ${JSON.stringify(VIRTUAL_MODEL_STATE_ENTRY)};
 `;
 
 export function sdkStubPackages(directory: string) {

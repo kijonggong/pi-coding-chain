@@ -1,9 +1,12 @@
 # aaii-router
 
-A Pi extension that registers `aaii/fallback`, a virtual model that picks a
-physical model from the providers this Pi already has credentials for, and steps
-to the next one when a request fails. No LiteLLM proxy is involved, so it
-replaces the `fallbacks` matrix rather than feeding it.
+A Pi extension that registers three virtual models under a `fallback`
+provider: `fallback/aaii`, `fallback/deepseek-v4.1-flash` and
+`fallback/glm-5.3-flash`. Each picks a physical model from the providers this
+Pi already has credentials for, and steps to the next one when a request
+fails. `fallback/aaii` walks every candidate; the two family routes walk only
+the candidates that serve their model family. No LiteLLM proxy is involved, so
+they replace the `fallbacks` matrix rather than feeding it.
 
 ## The problem it solves
 
@@ -15,6 +18,36 @@ missing piece was a model that answers with a different model per request.
 
 Pi's own automatic retry is not a substitute: it re-sends the *same* model and
 then gives up. Model-to-model fail-over is what this extension adds.
+
+## Routes
+
+| Model | `/model` shows | Candidates it walks |
+|---|---|---|
+| `fallback/aaii` | AAII fallback (providers direct) | every candidate, in the full policy order |
+| `fallback/deepseek-v4.1-flash` | DeepSeek V4.1 Flash fallback (providers direct) | only the candidates serving the DeepSeek V4.1 Flash family |
+| `fallback/glm-5.3-flash` | GLM 5.3 Flash fallback (providers direct) | only the candidates serving the GLM 5.3 Flash family |
+
+A family route is the same walk on a shorter list: the AAII score order, the
+quota-tier tie-break, the cooldown failure memory and the stickiness on a
+continuation all carry over unchanged, and the `/aaii-router` command, its
+subcommands and the settings file are shared by all three routes. Errors keep
+their tag per route: `fallback/aaii` answers with `[aaii-router]`, a family
+route with `[aaii-router/<id>]` — `[aaii-router/glm-5.3-flash] no eligible
+model: no chat model with credentials serves the glm-5.3-flash family, or the
+settings excluded it`.
+
+Family membership is decided on the canonical model key — the last path
+segment, lowercased, with `.` and `_` folded to `-`, the same fold the AAII
+score table uses. The family key (`deepseek-v4-1-flash`, `glm-5-3-flash`) has
+to appear as a dash-delimited token: an exact match, a prefix or a suffix. So
+a dated snapshot (`deepseek-v4.1-flash-1017`), a fine-tune (`-uncensored`), a
+tier suffix (`glm-5.3-flash-free`) and supplier prefixes or suffixes
+(`hive/deepseek-ai/deepseek-v4.1-flash-1017`, `zai_glm-5.3-flash`,
+`GLM-5.3-Flash-Trial`) are all in their family. A different version or a
+different variant is not: `deepseek-v4-flash` (no `.1`), `glm-5.2`, `glm-5.1`
+and `glm-5.35` stay out, and so does the non-flash `glm-5.3` on the flash
+route — `zaicoding_glm-5.3` is a different family, reachable only through
+`fallback/aaii`.
 
 ## Ordering policy
 
@@ -127,8 +160,11 @@ order still decides inside each group.
 ## Visibility
 
 The footer shows the physical candidate the session is on and how many
-candidates are cooling, for example `aaii → commandcode/Qwen3.8-Max · 2/9 cooling`.
-The write is wrapped, because the status line is decoration and the route is
+candidates are cooling, prefixed by the route id rather than a provider name:
+`aaii → commandcode/Qwen3.8-Max · 2/9 cooling` on the full-chain route,
+`deepseek-v4.1-flash → nvidia/deepseek-ai/deepseek-v4.1-flash` or
+`glm-5.3-flash → zcode/GLM-5.3-Flash` on a family one. The write is wrapped,
+because the status line is decoration and the route is
 not: a UI that refuses the call cannot fail a request.
 
 ## Settings window
@@ -366,9 +402,14 @@ keyboard protocol are handled by the SDK; the component tests verify delegation
 to configured cancel bindings using a simple stub, without testing SDK protocol
 parsing or adding custom escape buffering.
 
+`routes.test.ts` covers the registration itself: the three ids under the one
+`fallback` provider, family membership on the canonical key (prefix, suffix and
+supplier variants in; other versions out), and that a family route shortens
+the candidate list while `fallback/aaii` keeps the full chain.
+
 Neither file asserts that any particular model is available today, and no test
 invents a real leaderboard score. The end-to-end path — a session run against
-`aaii/fallback` recording the physical model it routed to — is not covered by a
-test, because it spends a request.
+`fallback/aaii` or a family route recording the physical model it routed to —
+is not covered by a test, because it spends a request.
 
 점수 경로는 coding-fallback의 `scores.ts`에서 가져오며 `PI_CODING_FALLBACK_SCORES`를 공유합니다. 점수 파일 없음(ENOENT)은 기존처럼 점수 없는 후보의 tier 순서를 허용하지만, 읽기 오류나 깨진 파일은 경로와 이유를 담은 오류로 registry 구성과 라우팅을 중단합니다. 이전의 조용한 tier 라우팅 대체 동작이 변경되었습니다. 설정 파일도 ENOENT만 없음으로 처리하며 다른 읽기 오류는 전파합니다. 깨진 설정 JSON은 기존 계약대로 note와 기본값을 사용합니다. URL 정규화는 coding-fallback/providers.ts를 공유하고, 설정 origin은 http(s)만 허용합니다. 상태 표시는 headless에서 no-op인 SDK UI 계약을 사용합니다.

@@ -106,6 +106,21 @@ export function eligibleModels(
 }
 
 /** Order candidates by score, then tier, then label. */
+export function candidateOrder(a: Candidate, b: Candidate): number {
+  const rankA = a.score === undefined ? Number.NEGATIVE_INFINITY : a.score;
+  const rankB = b.score === undefined ? Number.NEGATIVE_INFINITY : b.score;
+  if (rankA !== rankB) return rankB - rankA;
+  return tieOrder(a, b);
+}
+
+/** The tie-break below the score: the quota that replenishes soonest first,
+ * then `provider/id`. Family routes use this alone, because every candidate in
+ * a family serves the same model and there is no score left to break. */
+export function tieOrder(a: Candidate, b: Candidate): number {
+  if (a.tier !== b.tier) return a.tier - b.tier;
+  return a.label.localeCompare(b.label);
+}
+
 export function buildCandidates(
   models: readonly PhysicalModel[],
   scores: ScoreSnapshot,
@@ -124,13 +139,7 @@ export function buildCandidates(
         supportsImages: model.supportsImages === true,
       };
     })
-    .sort((a, b) => {
-      const rankA = a.score === undefined ? Number.NEGATIVE_INFINITY : a.score;
-      const rankB = b.score === undefined ? Number.NEGATIVE_INFINITY : b.score;
-      if (rankA !== rankB) return rankB - rankA;
-      if (a.tier !== b.tier) return a.tier - b.tier;
-      return a.label.localeCompare(b.label);
-    });
+    .sort(candidateOrder);
 }
 
 /** The part of a request message this module reads. */
