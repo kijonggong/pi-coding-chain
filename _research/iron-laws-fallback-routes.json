@@ -1,0 +1,2780 @@
+{
+  "schema_version": "1.7",
+  "document_id": "AUDIT-20261024-121508",
+  "title": "SW 개발보안 점검 보고서",
+  "auditor": "오철칙 자동 점검",
+  "audit_date": "2026-10-24",
+  "target_path": "D:\\repository\\pi-coding-chain",
+  "summary": {
+    "total_files_scanned": 94,
+    "total_violations": 35,
+    "critical_count": 0,
+    "high_count": 3,
+    "medium_count": 21,
+    "low_count": 11,
+    "suppressed_count": 0,
+    "is_passed": false,
+    "grade": "D",
+    "scan_status": "complete",
+    "new_count": null,
+    "existing_count": null,
+    "resolved_count": null,
+    "unobserved_count": null,
+    "approvals_valid": null,
+    "approvals_review": null,
+    "approvals_unobserved": null,
+    "contract_status": "not_applicable",
+    "contract_mode": "report",
+    "analysis_unknown_rate": null,
+    "evaluated_rule_language_pairs": 190,
+    "unverified_rule_language_pairs": 131,
+    "unverified_rule_language_rate": 0.6895,
+    "gates": null,
+    "gate_only_failure": false,
+    "gate_exceeded": []
+  },
+  "violations": [
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "LOW",
+      "file_path": "extensions/aaii-router/candidates.ts",
+      "line_number": 62,
+      "column": 61,
+      "snippet": "export const ****: readonly string[] = [\"****\"];",
+      "message": "URL ****이(가) 코드에 고정되어 있습니다. 개발용 주소는 배포 환경에서 동작하지 않습니다.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "0bbcf311f701d388009f",
+      "verification_grade": "verified",
+      "finding_id": "F-cf1e32cd9b90",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/aaii-router/index.ts",
+      "line_number": 1,
+      "column": 1,
+      "snippet": "/**",
+      "message": "파일이 717줄입니다 (기준 600줄). 역할별 모듈로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "51521d00201b89579a78",
+      "verification_grade": "unverified",
+      "finding_id": "F-e1711ba425df",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/aaii-router/index.ts",
+      "line_number": 501,
+      "column": 16,
+      "snippet": "export default function (pi: ExtensionAPI) {",
+      "message": "함수 <anonymous>이(가) 139줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "5e6ed1db312bb159d5a8",
+      "verification_grade": "unverified",
+      "finding_id": "F-db4be5bae3cb",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/aaii-router/index.ts",
+      "line_number": 518,
+      "column": 14,
+      "snippet": "handler: async (args, ctx) => {",
+      "message": "함수 handler이(가) 113줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "23c19a0822bf54b6e359",
+      "verification_grade": "unverified",
+      "finding_id": "F-b93ca9e8eabc",
+      "scope_name": "handler",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "TYP-301",
+      "rule_name": "TypeScript 타입 검사 회피(any, ts-ignore, 강제 캐스팅) 탐지",
+      "iron_law": 3,
+      "severity": "LOW",
+      "file_path": "extensions/aaii-router/routes.ts",
+      "line_number": 68,
+      "column": 56,
+      "snippet": ".filter((candidate) => matchesFamily(candidate.id, route.family!))",
+      "message": "non-null 단언(!)으로 null 가능성을 무시합니다.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "타입 검사를 끄거나 any로 덮으면 컴파일러가 잡아 줄 오류가 런타임까지 숨어 있다가 운영 중에 터집니다. AI는 타입 오류를 '해결'하는 대신 억제해 버리는 경우가 많습니다.",
+      "how_to_fix": "any/ignore로 덮지 말고 실제 타입을 정의하세요. 정말 모를 때는 unknown(TS)·object에 타입 가드를 거치거나, 입력 검증(zod, pydantic)으로 경계에서 한 번만 검증하세요.",
+      "rule_version": 1,
+      "fingerprint": "a19c9d92bd7627bcf16c",
+      "verification_grade": "verified",
+      "finding_id": "F-b94ca77a0f5f",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 191,
+      "column": 3,
+      "snippet": "if (trimmed === \"off\" || trimmed === \"none\" || trimmed === \"disabled\") return 0;",
+      "message": "parseDuration에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "f8f292598eb9bac0d342",
+      "verification_grade": "unverified",
+      "finding_id": "F-5925ea699553",
+      "scope_name": "parseDuration",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 195,
+      "column": 3,
+      "snippet": "if (!Number.isFinite(value) || value < 0) return undefined;",
+      "message": "parseDuration에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "1bbc540c62cf81756e1e",
+      "verification_grade": "unverified",
+      "finding_id": "F-b5514e47f5a1",
+      "scope_name": "parseDuration",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-204",
+      "rule_name": "동일·유사 함수(중복 헬퍼) 산재 탐지",
+      "iron_law": 5,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 201,
+      "column": 8,
+      "snippet": "export function parseToggle(text: string): boolean | undefined {",
+      "message": "동일한 함수가 2곳에 있습니다: extensions/aaii-router/settings.ts:201(parseToggle), extension****-catalog-filter/state.ts:45(parseSwitch). 공용 함수로 통합하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "CONFIRMED",
+      "plain": "AI는 새 요청마다 이미 있는 함수를 찾지 않고 비슷한 함수를 새로 만들어, 같은 일을 하는 코드가 여러 파일에 흩어집니다. 한 곳의 버그나 보안 수정이 다른 복사본에는 반영되지 않습니다.",
+      "how_to_fix": "중복된 함수를 하나의 공용 모듈(utils/common)로 모아 한 곳에서 import 해서 쓰세요. 이름만 다른 복사본은 하나를 남기고 호출부를 바꾸세요.",
+      "rule_version": 1,
+      "fingerprint": "156dc6e99df254d3b1d2",
+      "verification_grade": "unverified",
+      "finding_id": "F-3211b827fb25",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 203,
+      "column": 3,
+      "snippet": "if (TOGGLE_ON.has(trimmed)) return true;",
+      "message": "parseToggle에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "3192c3a0716bbb163203",
+      "verification_grade": "unverified",
+      "finding_id": "F-992a5b506561",
+      "scope_name": "parseToggle",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 204,
+      "column": 3,
+      "snippet": "if (TOGGLE_OFF.has(trimmed)) return false;",
+      "message": "parseToggle에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "42d6fed85dc3e80970d6",
+      "verification_grade": "unverified",
+      "finding_id": "F-c53be8353c1f",
+      "scope_name": "parseToggle",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "PERF-102",
+      "rule_name": "중첩 반복(O(n²) 이상)과 반복 안의 리스트 찾기 탐지",
+      "iron_law": 5,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 232,
+      "column": 10,
+      "snippet": "if (!models.includes(entry)) models.push(entry);",
+      "message": "반복문 안에서 배열의 includes로 값을 찾습니다. 배열은 앞에서부터 하나씩 확인하므로 데이터가 늘면 급격히 느려집니다.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "PERFORMANCE",
+      "confidence": "REVIEW",
+      "plain": "반복문 안에서 또 다른 컬렉션을 통째로 도는 코드는 데이터가 늘수록 일하는 횟수가 곱으로 늘어납니다. 1,000개 × 1,000개면 100만 번, 10만 개 × 10만 개면 100억 번입니다. 반복문 안에서 리스트에 `in`으로 값을 찾는 것도 같은 문제입니다. 리스트는 앞에서부터 하나씩 확인하기 때문입니다. 지금 데이터가 적으면 문제가 안 보이다가 사용자가 늘면 갑자기 느려집니다.",
+      "how_to_fix": "찾는 대상을 먼저 `set`이나 `dict`로 바꿔 두면 한 번에 찾습니다. 예) 고치기 전: `for a in A:\\n    for b in B:\\n        if a.id == b.id: ...`  고친 뒤: `by_id = {b.id: b for b in B}` 를 반복문 밖에서 만들고 `by_id.get(a.id)` 로 찾기. 리스트 `in` 검사는 `set(리스트)`로 바꾸세요. 느린지 직접 재려면 `python -m timeit` 이나 `cProfile`을 쓰세요.",
+      "rule_version": 1,
+      "fingerprint": "ea39457ed1721297867a",
+      "verification_grade": "unverified",
+      "finding_id": "F-aac618f4c615",
+      "scope_name": "parseModelEntries",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "PERF-102",
+      "rule_name": "중첩 반복(O(n²) 이상)과 반복 안의 리스트 찾기 탐지",
+      "iron_law": 5,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 246,
+      "column": 10,
+      "snippet": "if (!origins.includes(origin)) origins.push(origin);",
+      "message": "반복문 안에서 배열의 includes로 값을 찾습니다. 배열은 앞에서부터 하나씩 확인하므로 데이터가 늘면 급격히 느려집니다.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "PERFORMANCE",
+      "confidence": "REVIEW",
+      "plain": "반복문 안에서 또 다른 컬렉션을 통째로 도는 코드는 데이터가 늘수록 일하는 횟수가 곱으로 늘어납니다. 1,000개 × 1,000개면 100만 번, 10만 개 × 10만 개면 100억 번입니다. 반복문 안에서 리스트에 `in`으로 값을 찾는 것도 같은 문제입니다. 리스트는 앞에서부터 하나씩 확인하기 때문입니다. 지금 데이터가 적으면 문제가 안 보이다가 사용자가 늘면 갑자기 느려집니다.",
+      "how_to_fix": "찾는 대상을 먼저 `set`이나 `dict`로 바꿔 두면 한 번에 찾습니다. 예) 고치기 전: `for a in A:\\n    for b in B:\\n        if a.id == b.id: ...`  고친 뒤: `by_id = {b.id: b for b in B}` 를 반복문 밖에서 만들고 `by_id.get(a.id)` 로 찾기. 리스트 `in` 검사는 `set(리스트)`로 바꾸세요. 느린지 직접 재려면 `python -m timeit` 이나 `cProfile`을 쓰세요.",
+      "rule_version": 1,
+      "fingerprint": "cfbce143e91e8fb80699",
+      "verification_grade": "unverified",
+      "finding_id": "F-415b59af6d8a",
+      "scope_name": "parseOrigins",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/aaii-router/settings.ts",
+      "line_number": 299,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 로그나 전파 없이 처리합니다. 대체 동작이 의도된 것인지 확인하고 최소한 로그를 남기십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "3b1b1fecf851fe671610",
+      "verification_grade": "verified",
+      "finding_id": "F-3b43c429ca86",
+      "scope_name": "parseSettings",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/chain.ts",
+      "line_number": 254,
+      "column": 3,
+      "snippet": "if (start < 0) return [];",
+      "message": "readExistingOrder에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "34acd803510bb4ad16dd",
+      "verification_grade": "unverified",
+      "finding_id": "F-226b54f70a37",
+      "scope_name": "readExistingOrder",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/coding-fallback/chain.ts",
+      "line_number": 506,
+      "column": 8,
+      "snippet": "export function composeCodingFallback(",
+      "message": "함수 composeCodingFallback이(가) 84줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "e1bd05e1bd08dedbf345",
+      "verification_grade": "unverified",
+      "finding_id": "F-7e1a903c084a",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/fetch-scores.mjs",
+      "line_number": 37,
+      "column": 13,
+      "snippet": "const API = \"****\";",
+      "message": "URL ****이(가) 코드에 고정되어 있습니다. 환경별로 바뀌는 주소는 설정으로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "7bbf12b48d66cba014c8",
+      "verification_grade": "verified",
+      "finding_id": "F-8487d6adf96b",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-205",
+      "rule_name": "여러 곳에 반복된 문자열 상수 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/coding-fallback/fetch-scores.mjs",
+      "line_number": 72,
+      "column": 51,
+      "snippet": "{ key: \"qwen3.7-max\", creator: \"alibaba\", slug: \"qwen3-7-max\" },",
+      "message": "문자열 'qwen3-7-max'이(가) 2개 파일, 5곳에 반복됩니다. 상수로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "같은 문자열(주소, 키 이름, 상태값)을 여러 파일에 직접 적어 두면 하나를 바꿀 때 나머지를 빼먹어 오류가 납니다.",
+      "how_to_fix": "반복되는 값은 상수나 설정 모듈에 한 번만 정의하고 이름으로 참조하세요.",
+      "rule_version": 1,
+      "fingerprint": "d33a93a99875e5dfadc5",
+      "verification_grade": "unverified",
+      "finding_id": "F-23322b9a4db4",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/coding-fallback/free-fetch.ts",
+      "line_number": 80,
+      "column": 8,
+      "snippet": "export async function refreshFreeSnapshot(options: RefreshOptions): Promise<RefreshOutcome> {",
+      "message": "함수 refreshFreeSnapshot이(가) 102줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "7e68d3fb88c60f81c335",
+      "verification_grade": "unverified",
+      "finding_id": "F-24cae09ed0cf",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/free-models.ts",
+      "line_number": 53,
+      "column": 33,
+      "snippet": "export const EXPLABS_BASE_URL = \"****\";",
+      "message": "URL ****이(가) 코드에 고정되어 있습니다. 환경별로 바뀌는 주소는 설정으로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "8314d2fb3714a7dffcdf",
+      "verification_grade": "verified",
+      "finding_id": "F-b83ef1d59d77",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "HIGH",
+      "file_path": "extensions/coding-fallback/free-models.ts",
+      "line_number": 305,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 잡고 기본값을 반환해 오류를 숨깁니다. 기록하거나 다시 던지십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "CONFIRMED",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "a395bec078f02fb0f495",
+      "verification_grade": "verified",
+      "finding_id": "F-2743970f418b",
+      "scope_name": "parseFreeSnapshot",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/coding-fallback/index.ts",
+      "line_number": 212,
+      "column": 1,
+      "snippet": "async function addWithWindow(ctx: ExtensionCommandContext): Promise<void> {",
+      "message": "함수 addWithWindow이(가) 109줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "fefc392d6541f3d57adf",
+      "verification_grade": "unverified",
+      "finding_id": "F-d670832334ac",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-111",
+      "rule_name": "주석 안의 시스템 주요정보 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/listing.ts",
+      "line_number": 31,
+      "column": 1,
+      "snippet": "* The value to send as the bearer token: `****` reads `****`, and",
+      "message": "주석에 비밀번호/키로 보이는 값이 남아 있습니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 2-13 주석문 안에 포함된 시스템 주요정보",
+        "description": "주석문 안에 포함된 시스템 주요정보 (CWE-615)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "2-13",
+          "item_name": "주석문 안에 포함된 시스템 주요정보",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A02",
+          "item_name": "Security Misconfiguration",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "CONFIRMED",
+      "plain": "주석은 배포된 파일에 그대로 남습니다. 주석에 적어 둔 비밀번호·내부 주소는 코드를 보는 누구에게나 보입니다.",
+      "how_to_fix": "주석에서 비밀번호, 키, 내부 IP, 접속 문자열을 지우세요. 이미 저장소에 올라갔다면 해당 값을 폐기하고 새로 발급하세요.",
+      "rule_version": 1,
+      "fingerprint": "f57572d927c3ed58919c",
+      "verification_grade": "unverified",
+      "finding_id": "F-baede72b1d15",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/providers.ts",
+      "line_number": 41,
+      "column": 11,
+      "snippet": "host: \"****\",",
+      "message": "IP 주소 ****이(가) 코드에 고정되어 있습니다.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "d776d9b6a054d7cc3b28",
+      "verification_grade": "verified",
+      "finding_id": "F-ab6bbe07305b",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/providers.ts",
+      "line_number": 116,
+      "column": 3,
+      "snippet": "if (value === undefined) return undefined;",
+      "message": "parseProviderUrl에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "0c585c98d08d123340d2",
+      "verification_grade": "unverified",
+      "finding_id": "F-96eab6a9f12d",
+      "scope_name": "parseProviderUrl",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "HIGH",
+      "file_path": "extensions/coding-fallback/providers.ts",
+      "line_number": 120,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 잡고 기본값을 반환해 오류를 숨깁니다. 기록하거나 다시 던지십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "CONFIRMED",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "1ee046670ae61b6c2e74",
+      "verification_grade": "verified",
+      "finding_id": "F-fb782bcd0564",
+      "scope_name": "parseProviderUrl",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-204",
+      "rule_name": "동일·유사 함수(중복 헬퍼) 산재 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/coding-fallback/register.ts",
+      "line_number": 189,
+      "column": 8,
+      "snippet": "export function validateModelId(text: string): string | undefined {",
+      "message": "동일한 함수가 2곳에 있습니다: extensions/coding-fallback/register.ts:189(validateModelId), extensions/coding-fallback/register.ts:223(validateSlug). 공용 함수로 통합하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "CONFIRMED",
+      "plain": "AI는 새 요청마다 이미 있는 함수를 찾지 않고 비슷한 함수를 새로 만들어, 같은 일을 하는 코드가 여러 파일에 흩어집니다. 한 곳의 버그나 보안 수정이 다른 복사본에는 반영되지 않습니다.",
+      "how_to_fix": "중복된 함수를 하나의 공용 모듈(utils/common)로 모아 한 곳에서 import 해서 쓰세요. 이름만 다른 복사본은 하나를 남기고 호출부를 바꾸세요.",
+      "rule_version": 1,
+      "fingerprint": "1e598d15237d9782ba37",
+      "verification_grade": "unverified",
+      "finding_id": "F-b7e73137a8c7",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "HIGH",
+      "file_path": "extensions/coding-fallback/scores.ts",
+      "line_number": 84,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 잡고 기본값을 반환해 오류를 숨깁니다. 기록하거나 다시 던지십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "CONFIRMED",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "99d1dc11414e338a0e43",
+      "verification_grade": "verified",
+      "finding_id": "F-05005855b7ca",
+      "scope_name": "parseScores",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/coding-fallback/scores.ts",
+      "line_number": 87,
+      "column": 3,
+      "snippet": "if (!raw || typeof raw !== \"object\") return undefined;",
+      "message": "parseScores에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "23286a6fbbfa2533e22b",
+      "verification_grade": "unverified",
+      "finding_id": "F-b5bf6bdd1d60",
+      "scope_name": "parseScores",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/openrouter-catalog-filter/index.ts",
+      "line_number": 46,
+      "column": 21,
+      "snippet": "const CATALOG_URL = \"****\";",
+      "message": "URL ****이(가) 코드에 고정되어 있습니다. 환경별로 바뀌는 주소는 설정으로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "62616d321d41e0f0f98d",
+      "verification_grade": "verified",
+      "finding_id": "F-fd59d8d72152",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/openrouter-catalog-filter/index.ts",
+      "line_number": 230,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 로그나 전파 없이 처리합니다. 대체 동작이 의도된 것인지 확인하고 최소한 로그를 남기십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "f67c6f15f0b56648ee71",
+      "verification_grade": "verified",
+      "finding_id": "F-738dc9e201d7",
+      "scope_name": "readStoredModels",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "ARC-201",
+      "rule_name": "과도하게 큰 파일·함수·깊은 중첩 탐지",
+      "iron_law": 5,
+      "severity": "LOW",
+      "file_path": "extensions/openrouter-catalog-filter/index.ts",
+      "line_number": 305,
+      "column": 16,
+      "snippet": "export default async function (pi: ExtensionAPI) {",
+      "message": "함수 <anonymous>이(가) 83줄입니다 (기준 80줄). 작은 함수로 나누십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "ARCHITECTURE",
+      "confidence": "REVIEW",
+      "plain": "한 함수나 파일이 너무 길고 복잡하면 사람도 AI도 전체를 이해하지 못해, 고칠 때마다 다른 곳이 깨지고 보안 결함을 놓칩니다. AI가 기능을 계속 덧붙이면 한 파일에 모든 것이 쌓이는 경우가 많습니다.",
+      "how_to_fix": "하나의 일만 하는 작은 함수로 나누고, 조건 중첩은 조기 반환(early return)으로 줄이고, 파일은 역할별 모듈로 분리하세요. 매개변수가 많으면 객체로 묶으세요.",
+      "rule_version": 2,
+      "fingerprint": "c08090232116c1eda63f",
+      "verification_grade": "unverified",
+      "finding_id": "F-cac105d5dd2c",
+      "scope_name": "<anonymous>",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/openrouter-catalog-filter/state.ts",
+      "line_number": 47,
+      "column": 3,
+      "snippet": "if (ON.has(trimmed)) return true;",
+      "message": "parseSwitch에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "14ff082b572051712198",
+      "verification_grade": "unverified",
+      "finding_id": "F-28f41dc53020",
+      "scope_name": "parseSwitch",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-307",
+      "rule_name": "검증·처리 실패를 null·기본값으로 대체하고 기록하지 않음",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/openrouter-catalog-filter/state.ts",
+      "line_number": 48,
+      "column": 3,
+      "snippet": "if (OFF.has(trimmed)) return false;",
+      "message": "parseSwitch에서 조건 실패 시 예외나 로그 없이 기본값을 반환합니다. 실패가 정상 결과처럼 전달됩니다.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "검증이나 복호화가 실패했는데 예외 없이 null·false를 돌려주면, 호출한 쪽은 실패를 모른 채 정상처럼 처리를 이어 갑니다. 결제·인증처럼 정확성이 중요한 곳에서는 잘못된 결과가 조용히 쌓이고 원인도 남지 않습니다.",
+      "how_to_fix": "정상 흐름을 벗어나면 예외를 던지세요(복구할 수 있는 경우에만 처리). 던지지 않고 값을 돌려줘야 한다면 실패 사유를 로그로 남기고, 호출한 쪽이 실패를 구분할 수 있게 결과 타입(성공·실패)을 명시하세요.",
+      "rule_version": 2,
+      "fingerprint": "fcc1488435a3cc2305fa",
+      "verification_grade": "unverified",
+      "finding_id": "F-faa11408477b",
+      "scope_name": "parseSwitch",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "IL-301",
+      "rule_name": "예외 은폐 (로그도 전파도 없는 오류 처리) 탐지",
+      "iron_law": 3,
+      "severity": "MEDIUM",
+      "file_path": "extensions/openrouter-catalog-filter/state.ts",
+      "line_number": 82,
+      "column": 5,
+      "snippet": "} catch {",
+      "message": "예외를 로그나 전파 없이 처리합니다. 대체 동작이 의도된 것인지 확인하고 최소한 로그를 남기십시오.",
+      "gov_standard": {
+        "standard_name": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "clause_id": "구현단계 4-2 오류 상황 대응 부재",
+        "description": "오류 상황 대응 부재 (CWE-390)"
+      },
+      "standards": [
+        {
+          "pack_id": "mois-2021-impl",
+          "edition": "2021-11",
+          "item_id": "4-2",
+          "item_name": "오류 상황 대응 부재",
+          "mapping_verified": true
+        },
+        {
+          "pack_id": "owasp-top10-2025",
+          "edition": "2025",
+          "item_id": "A10",
+          "item_name": "Mishandling of Exceptional Conditions",
+          "mapping_verified": true
+        }
+      ],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "STANDARD",
+      "confidence": "REVIEW",
+      "plain": "오류가 났는데 기록도 하지 않고 조용히 넘어가면, 서비스가 잘못된 결과를 내도 아무도 모르고 원인도 찾을 수 없습니다. AI가 코드를 '일단 돌아가게' 만들 때 자주 이렇게 덮어 둡니다.",
+      "how_to_fix": "예상하지 못한 오류는 다시 던지거나(raise/throw) 최소한 로그로 남기세요. 복구할 수 있는 경우에만 처리하고, 그 이유를 주석과 로그에 남기세요. 예: logger.exception('결제 처리 실패'); raise",
+      "rule_version": 2,
+      "fingerprint": "92f6c404eec95b69ba38",
+      "verification_grade": "verified",
+      "finding_id": "F-69c6009f5a84",
+      "scope_name": "parseState",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    },
+    {
+      "rule_id": "AI-101",
+      "rule_name": "하드코딩된 설정값(URL·IP·경로·포트) 탐지",
+      "iron_law": 1,
+      "severity": "MEDIUM",
+      "file_path": "extensions/quota-providers/catalog.ts",
+      "line_number": 94,
+      "column": 12,
+      "snippet": "baseUrl: \"****\",",
+      "message": "URL ****이(가) 코드에 고정되어 있습니다. 환경별로 바뀌는 주소는 설정으로 분리하십시오.",
+      "gov_standard": null,
+      "standards": [],
+      "review_opinion": null,
+      "fix": null,
+      "layer": "AI_CODE",
+      "confidence": "REVIEW",
+      "plain": "주소·IP·내 컴퓨터 경로를 코드에 박아 두면 내 PC에서만 돌아가고, 배포하거나 환경이 바뀔 때마다 코드를 고쳐야 합니다. AI는 우선 돌아가게 하려고 이렇게 쓰는 경우가 많습니다.",
+      "how_to_fix": "환경별로 달라지는 값(API 주소, DB 호스트, 포트, 파일 경로)은 환경변수나 설정 파일로 빼서 읽으세요. 예: BASE_URL = os.environ['API_BASE_URL'] / process.env.API_BASE_URL",
+      "rule_version": 2,
+      "fingerprint": "ef84304872be70495c5b",
+      "verification_grade": "verified",
+      "finding_id": "F-0e547a64fc85",
+      "scope_name": "",
+      "evidence": [],
+      "baseline_status": null,
+      "approval_status": null,
+      "approval_id": null,
+      "approval_reasons": []
+    }
+  ],
+  "diagnostics": [
+    {
+      "kind": "analysis_limit",
+      "severity": "info",
+      "message": "파일 간·함수 간 분석 한도를 넘어 41건은 해석하지 않았습니다. 해당 흐름은 미확인 상태입니다 (limits.max_cross_file_lookups로 조정).",
+      "file_path": "",
+      "line": 0
+    }
+  ],
+  "coverage_ledger": {
+    "contract_version": 1,
+    "contract_mode": "report",
+    "contract_scope": "all",
+    "contract_digest": "49a858b1f5e7d5e7",
+    "contract_source": "기본값",
+    "languages": [
+      "python"
+    ],
+    "digests": {
+      "code": "0f3dd081842ad2e0",
+      "tool": "1.9.0+5b6f12e8812ae9e1",
+      "config": "6596f0e0ba52a59c",
+      "contract": "49a858b1f5e7d5e7",
+      "spec": ""
+    },
+    "families": [
+      {
+        "family": "command",
+        "required": true,
+        "total": 0,
+        "in_scope": 0,
+        "by_state": {}
+      },
+      {
+        "family": "path",
+        "required": true,
+        "total": 0,
+        "in_scope": 0,
+        "by_state": {}
+      },
+      {
+        "family": "sql",
+        "required": true,
+        "total": 0,
+        "in_scope": 0,
+        "by_state": {}
+      }
+    ],
+    "points": [],
+    "files": [
+      {
+        "path": "README.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "WORKLOG.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/aaii-fallback-tui-contract.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/aaii-score-source.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/freebuff2api-security-review.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-aaii-fallback.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-after-w5.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-after-w7.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-w1-after.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-w3-after.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/iron-laws-w4-after.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/litellm-runtime-baseline.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/magpie-tui-reference.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/merge-check.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/merge-final-check.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/mutation-check-aaii-fallback.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/mutation-check-iron-laws-w1.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/n3-module-harness-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/review-aaii-fallback-model.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/review-aaii-fallback-tui.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/review-aaii-fallback-verify.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-disposition-aaii-fallback.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-disposition-iron-laws.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-final-check-aaii-fallback.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-final-check-iron-laws.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-rereview-aaii-fallback.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-rereview-iron-laws.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-review-aaii-fallback.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/standard-review-iron-laws-rejections.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w1-iron-laws-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w1-mutation-results.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w3-iron-laws-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w3-mutation-results.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w4-iron-laws-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w5-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w6-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "_research/w7-report.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "docs/engineering-standard.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/README.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/candidates.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/candidates.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/chain-order.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/chain-order.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/cooldown.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/cooldown.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/fallback-editor.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/fallback-editor.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/fallback-tui.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/fallback-tui.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/index.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/index.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/routes.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/routes.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/settings.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/settings.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/aaii-router/test-support.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/README.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/aaii-scores.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/catalog.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/catalog.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/chain.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/chain.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/config.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/config.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/fetch-free.mjs",
+        "classification": "unsupported_language",
+        "reason": "계약이 javascript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/fetch-scores.mjs",
+        "classification": "unsupported_language",
+        "reason": "계약이 javascript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/fetch-scores.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/free-fetch.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/free-fetch.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/free-models.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/free-models.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/free-models.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/index.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/listing.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/listing.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/picker.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/picker.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/providers.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/providers.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/register.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/register.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/scores.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/coding-fallback/scores.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/openrouter-catalog-filter/README.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/openrouter-catalog-filter/index.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/openrouter-catalog-filter/index.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/openrouter-catalog-filter/state.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/openrouter-catalog-filter/state.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/quota-providers/README.md",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(doc)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/quota-providers/catalog.test.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/quota-providers/catalog.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "extensions/quota-providers/index.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "package.json",
+        "classification": "out_of_scope",
+        "reason": "점검 계약 범위 밖의 파일 종류(json)",
+        "changed": true,
+        "interest_points": 0
+      },
+      {
+        "path": "test-support/module-harness.ts",
+        "classification": "unsupported_language",
+        "reason": "계약이 typescript를 지원하지 않는다",
+        "changed": true,
+        "interest_points": 0
+      }
+    ],
+    "unclassified_changed_files": [],
+    "status": "not_applicable",
+    "run_id": "R-bb5d2a811040",
+    "requirements": {
+      "command": {
+        "required": true,
+        "block_on": [
+          "budget_exceeded",
+          "unresolved",
+          "unsupported"
+        ]
+      },
+      "path": {
+        "required": true,
+        "block_on": [
+          "budget_exceeded",
+          "unresolved",
+          "unsupported"
+        ]
+      },
+      "sql": {
+        "required": true,
+        "block_on": [
+          "budget_exceeded",
+          "unresolved",
+          "unsupported"
+        ]
+      }
+    },
+    "blockers": [],
+    "limitations": [
+      "관심 지점은 호출 이름으로 찾는다. import 별칭, getattr 같은 동적 호출, 프레임워크가 감춘 호출은 지점으로 발견되지 않을 수 있다.",
+      "'근거 충족'은 그 지점에서 계약이 요구한 분석 근거를 확보했다는 뜻이며 프로그램 전체가 안전하다는 뜻이 아니다.",
+      "전체 코드의 몇 %가 안전하다는 점수는 만들지 않는다. 아래 분모(발견한 지점 수, 분류하지 못한 파일)와 함께 읽는다.",
+      "점검 설정의 제외 대상(excludes)에 걸리는 파일은 장부에 나타나지 않는다. 제외 건수는 metadata.excluded_summary에 있다."
+    ]
+  },
+  "execution": {
+    "run_id": "R-bb5d2a811040",
+    "tool_version": "1.9.0",
+    "ruleset_hash": "5b6f12e8812ae9e1",
+    "config_hash": "6596f0e0ba52a59c",
+    "contract_digest": "49a858b1f5e7d5e7",
+    "code_digest": "0f3dd081842ad2e0",
+    "scan_status": "complete",
+    "files_scanned": 94,
+    "files_skipped": 0,
+    "error_diagnostics": 0,
+    "cross_file_limit_hits": 41,
+    "cost": {
+      "wall_seconds": 10.156,
+      "cpu_seconds": 7.938,
+      "peak_rss_mb": 0.0,
+      "files_per_second": 9.26,
+      "workers": 12,
+      "phase_seconds": {
+        "file_rules": 8.265,
+        "project_rules": 0.422,
+        "ledger": 0.047
+      },
+      "budget_seconds": null,
+      "budget_exceeded": false
+    }
+  },
+  "approval_checks": [],
+  "metadata": {
+    "config": {
+      "fail_on": "HIGH",
+      "excludes": [
+        ".git",
+        ".svn",
+        ".hg",
+        ".serena",
+        ".samcheonpo",
+        ".venv",
+        "venv",
+        "env",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        "target",
+        "bin",
+        "obj",
+        ".next*",
+        ".nuxt*",
+        ".svelte-kit*",
+        ".vercel",
+        ".output",
+        ".expo",
+        ".dart_tool",
+        ".angular",
+        ".turbo",
+        ".cache",
+        ".parcel-cache",
+        ".gradle",
+        ".idea",
+        ".vscode",
+        "out",
+        "coverage",
+        "vendor",
+        "third_party",
+        "storybook-static",
+        "generated",
+        "__generated__",
+        "generated-assets",
+        "*-build",
+        "*-dist",
+        "*.min.js",
+        "*.min.css",
+        "*.bundle.js",
+        "*.map",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "*.lock"
+      ],
+      "include_extensions": [
+        ".py",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".mts",
+        ".cts",
+        ".tsx",
+        ".java",
+        ".cs",
+        ".go",
+        ".rs",
+        ".php",
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hh",
+        ".kt",
+        ".kts",
+        ".sql",
+        ".sh",
+        ".xml",
+        ".yml",
+        ".yaml",
+        ".json",
+        ".properties",
+        ".toml",
+        ".rules",
+        ".html",
+        ".htm",
+        ".jinja",
+        ".j2",
+        ".cshtml",
+        ".gradle",
+        ".md",
+        ".mdc"
+      ],
+      "limits": {
+        "max_function_lines": 80,
+        "max_file_lines": 600,
+        "max_parameters": 7,
+        "max_nesting": 5,
+        "duplicate_min_nodes": 40,
+        "duplicate_similarity": 0.9,
+        "max_file_bytes": 1000000,
+        "max_cross_file_lookups": 20000,
+        "max_workers": null,
+        "parallel_min_files": null,
+        "max_wall_seconds": null
+      },
+      "policies": {
+        "min_versions": {},
+        "package_index": null,
+        "custom_spec": null,
+        "ledger_include_spec_points": false,
+        "private_packages": []
+      },
+      "respect_gitignore": false,
+      "enabled_rules": null,
+      "disabled_rules": []
+    },
+    "config_source": "기본값",
+    "config_hash": "6596f0e0ba52a59c",
+    "fail_on_source": "기본값",
+    "tool_version": "1.9.0",
+    "ruleset": {
+      "count": 104,
+      "hash": "5b6f12e8812ae9e1",
+      "support_manifest": "58303a92cf7d8502",
+      "rules": [
+        {
+          "id": "AI-101",
+          "version": 2
+        },
+        {
+          "id": "AI-102",
+          "version": 1
+        },
+        {
+          "id": "AI-103",
+          "version": 1
+        },
+        {
+          "id": "AI-104",
+          "version": 1
+        },
+        {
+          "id": "AI-105",
+          "version": 1
+        },
+        {
+          "id": "AI-106",
+          "version": 1
+        },
+        {
+          "id": "AI-108",
+          "version": 1
+        },
+        {
+          "id": "AI-109",
+          "version": 1
+        },
+        {
+          "id": "AI-110",
+          "version": 1
+        },
+        {
+          "id": "AI-111",
+          "version": 1
+        },
+        {
+          "id": "AI-112",
+          "version": 1
+        },
+        {
+          "id": "AI-113",
+          "version": 1
+        },
+        {
+          "id": "AI-114",
+          "version": 1
+        },
+        {
+          "id": "AI-115",
+          "version": 1
+        },
+        {
+          "id": "AI-118",
+          "version": 1
+        },
+        {
+          "id": "AI-119",
+          "version": 1
+        },
+        {
+          "id": "AI-120",
+          "version": 1
+        },
+        {
+          "id": "AI-121",
+          "version": 2
+        },
+        {
+          "id": "AI-122",
+          "version": 1
+        },
+        {
+          "id": "AIA-101",
+          "version": 1
+        },
+        {
+          "id": "AIA-102",
+          "version": 1
+        },
+        {
+          "id": "AIA-103",
+          "version": 1
+        },
+        {
+          "id": "AIA-104",
+          "version": 1
+        },
+        {
+          "id": "AIA-105",
+          "version": 1
+        },
+        {
+          "id": "AIA-106",
+          "version": 1
+        },
+        {
+          "id": "AIA-107",
+          "version": 1
+        },
+        {
+          "id": "AIA-108",
+          "version": 1
+        },
+        {
+          "id": "AIA-109",
+          "version": 1
+        },
+        {
+          "id": "ARC-201",
+          "version": 2
+        },
+        {
+          "id": "ARC-202",
+          "version": 1
+        },
+        {
+          "id": "ARC-203",
+          "version": 1
+        },
+        {
+          "id": "ARC-204",
+          "version": 1
+        },
+        {
+          "id": "ARC-205",
+          "version": 1
+        },
+        {
+          "id": "ARC-206",
+          "version": 1
+        },
+        {
+          "id": "ARC-207",
+          "version": 2
+        },
+        {
+          "id": "ARC-208",
+          "version": 1
+        },
+        {
+          "id": "ARC-209",
+          "version": 1
+        },
+        {
+          "id": "ARC-210",
+          "version": 1
+        },
+        {
+          "id": "ARC-211",
+          "version": 1
+        },
+        {
+          "id": "ARC-212",
+          "version": 2
+        },
+        {
+          "id": "IL-101",
+          "version": 1
+        },
+        {
+          "id": "IL-102",
+          "version": 1
+        },
+        {
+          "id": "IL-103",
+          "version": 1
+        },
+        {
+          "id": "IL-104",
+          "version": 1
+        },
+        {
+          "id": "IL-105",
+          "version": 1
+        },
+        {
+          "id": "IL-106",
+          "version": 1
+        },
+        {
+          "id": "IL-107",
+          "version": 1
+        },
+        {
+          "id": "IL-108",
+          "version": 1
+        },
+        {
+          "id": "IL-109",
+          "version": 1
+        },
+        {
+          "id": "IL-110",
+          "version": 1
+        },
+        {
+          "id": "IL-111",
+          "version": 1
+        },
+        {
+          "id": "IL-112",
+          "version": 1
+        },
+        {
+          "id": "IL-113",
+          "version": 1
+        },
+        {
+          "id": "IL-114",
+          "version": 1
+        },
+        {
+          "id": "IL-301",
+          "version": 2
+        },
+        {
+          "id": "IL-302",
+          "version": 1
+        },
+        {
+          "id": "IL-303",
+          "version": 1
+        },
+        {
+          "id": "IL-304",
+          "version": 2
+        },
+        {
+          "id": "IL-305",
+          "version": 1
+        },
+        {
+          "id": "IL-306",
+          "version": 2
+        },
+        {
+          "id": "IL-307",
+          "version": 2
+        },
+        {
+          "id": "IL-501",
+          "version": 2
+        },
+        {
+          "id": "IL-502",
+          "version": 2
+        },
+        {
+          "id": "IL-503",
+          "version": 1
+        },
+        {
+          "id": "IL-504",
+          "version": 1
+        },
+        {
+          "id": "IL-505",
+          "version": 1
+        },
+        {
+          "id": "IL-506",
+          "version": 1
+        },
+        {
+          "id": "IL-507",
+          "version": 1
+        },
+        {
+          "id": "IL-508",
+          "version": 2
+        },
+        {
+          "id": "IL-509",
+          "version": 1
+        },
+        {
+          "id": "IL-510",
+          "version": 1
+        },
+        {
+          "id": "IL-511",
+          "version": 1
+        },
+        {
+          "id": "IL-512",
+          "version": 1
+        },
+        {
+          "id": "IL-513",
+          "version": 1
+        },
+        {
+          "id": "IL-514",
+          "version": 1
+        },
+        {
+          "id": "IL-515",
+          "version": 1
+        },
+        {
+          "id": "IL-516",
+          "version": 1
+        },
+        {
+          "id": "IL-517",
+          "version": 1
+        },
+        {
+          "id": "IL-518",
+          "version": 1
+        },
+        {
+          "id": "IL-519",
+          "version": 1
+        },
+        {
+          "id": "IL-520",
+          "version": 1
+        },
+        {
+          "id": "IL-521",
+          "version": 1
+        },
+        {
+          "id": "IL-522",
+          "version": 1
+        },
+        {
+          "id": "IL-523",
+          "version": 1
+        },
+        {
+          "id": "IL-524",
+          "version": 1
+        },
+        {
+          "id": "IL-525",
+          "version": 1
+        },
+        {
+          "id": "IL-526",
+          "version": 1
+        },
+        {
+          "id": "IL-527",
+          "version": 1
+        },
+        {
+          "id": "IL-528",
+          "version": 1
+        },
+        {
+          "id": "IL-529",
+          "version": 1
+        },
+        {
+          "id": "IL-530",
+          "version": 1
+        },
+        {
+          "id": "IL-531",
+          "version": 2
+        },
+        {
+          "id": "IL-532",
+          "version": 1
+        },
+        {
+          "id": "IL-533",
+          "version": 1
+        },
+        {
+          "id": "PERF-101",
+          "version": 1
+        },
+        {
+          "id": "PERF-102",
+          "version": 1
+        },
+        {
+          "id": "PERF-103",
+          "version": 1
+        },
+        {
+          "id": "PERF-104",
+          "version": 1
+        },
+        {
+          "id": "PERF-105",
+          "version": 1
+        },
+        {
+          "id": "TYP-301",
+          "version": 1
+        },
+        {
+          "id": "TYP-302",
+          "version": 1
+        },
+        {
+          "id": "TYP-303",
+          "version": 1
+        },
+        {
+          "id": "TYP-304",
+          "version": 1
+        },
+        {
+          "id": "TYP-305",
+          "version": 1
+        }
+      ]
+    },
+    "files_by_language": {
+      "doc": 34,
+      "javascript": 2,
+      "json": 11,
+      "typescript": 47
+    },
+    "skipped_files": [],
+    "excluded_summary": {
+      "files": {},
+      "directories": {
+        ".git": 1
+      }
+    },
+    "unscanned_by_extension": {
+      "(확장자 없음)": 1
+    },
+    "cross_file": {
+      "resolved_calls": 107,
+      "limit_hits": 41,
+      "by_language": {
+        "javascript": {
+          "resolved_calls": 4,
+          "resolution_gaps": 0,
+          "limit_hits": 0,
+          "resolution_gap_rate": 0.0
+        },
+        "typescript": {
+          "resolved_calls": 103,
+          "resolution_gaps": 0,
+          "limit_hits": 41,
+          "resolution_gap_rate": 0.0
+        }
+      }
+    },
+    "repo_relative_prefix": "",
+    "standard_packs": [
+      {
+        "id": "mois-2021-impl",
+        "title": "행정안전부 소프트웨어 개발보안 가이드(2021.11 개정)",
+        "edition": "2021-11",
+        "source_url": "",
+        "retrieved_at": "",
+        "sha256": "62c55524d4c4d593988a3ac3d6df565837d6390ee68b6e27449ca07c1aaec48c",
+        "mapping_verified": true
+      },
+      {
+        "id": "cwe-top25-2025",
+        "title": "2025 CWE Top 25 Most Dangerous Software Weaknesses",
+        "edition": "2025",
+        "source_url": "https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html",
+        "retrieved_at": "2026-10-12",
+        "sha256": "cdbc113bff65a406b26ce32301e5254416ffb9da5b380fe4621f9e2c9e8f8833",
+        "mapping_verified": true
+      },
+      {
+        "id": "nis-ai-2025",
+        "title": "국가정보원 국가·공공기관 AI보안 가이드북",
+        "edition": "2025-12",
+        "source_url": "https://www.nis.go.kr/AF/1_7_7_1.do",
+        "retrieved_at": "2026-10-12",
+        "sha256": "594bcf573e201d49c1b2d63400e09bcaf5962d999eb1b4303f2fe9fafd40deda",
+        "mapping_verified": true
+      },
+      {
+        "id": "owasp-asi-2026",
+        "title": "OWASP Top 10 for Agentic Applications 2026",
+        "edition": "2026",
+        "source_url": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/",
+        "retrieved_at": "2026-10-12",
+        "sha256": "d4af4b39c5a35e880c153362b7e9df1461e94e743497e92f09b7e0e8f21c64aa",
+        "mapping_verified": true
+      },
+      {
+        "id": "owasp-top10-2025",
+        "title": "OWASP Top 10:2025",
+        "edition": "2025",
+        "source_url": "https://top10.owasp.org/2025",
+        "retrieved_at": "2026-10-12",
+        "sha256": "17d5153f13650e3846077be6746705982cc5a811ed73f4b6b78a688ce7ca58db",
+        "mapping_verified": true
+      }
+    ],
+    "routes": {
+      "total": 0,
+      "sensitive": 0,
+      "auth": {
+        "yes": 0,
+        "no": 0,
+        "unknown": 0
+      },
+      "authz": {
+        "yes": 0,
+        "no": 0,
+        "unknown": 0,
+        "n/a": 0
+      },
+      "rows": [],
+      "truncated": false
+    },
+    "suppressions": []
+  }
+}
