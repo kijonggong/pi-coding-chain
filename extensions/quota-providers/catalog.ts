@@ -22,8 +22,7 @@
  *   `help.aliyun.com/zh/model-studio/<slug>`.
  *
  * Where Alibaba publishes the same limits for a dated snapshot and its base
- * model, the snapshot carries the base model's figures and says so. Two limits
- * are deliberately *lower* than the published page: see `MAX_OUTPUT_CAVEAT`.
+ * model, the snapshot carries the base model's figures and says so.
  */
 
 import { EXPLABS_BASE_URL } from "../coding-fallback/free-models.ts";
@@ -60,17 +59,6 @@ export interface ProviderSpec {
   readonly models: readonly ModelSpec[];
 }
 
-/**
- * Two Alibaba pages publish a maximum output equal to the whole context window
- * (`kimi-k3` and `kimi-k2.7-code`). That cannot be right: an output limit that
- * equals the input limit leaves no room for the prompt. Overstating `maxTokens`
- * makes the provider reject the request outright, while understating it only
- * caps planned output, so both entries take the smaller figure that Pi's own
- * catalog carries for the same upstream model.
- */
-export const MAX_OUTPUT_CAVEAT =
-  "Alibaba's page reports a maximum output equal to the context window; the smaller catalog figure is used instead.";
-
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /** Alibaba's published page for a model, as a source string. */
@@ -92,9 +80,7 @@ function dashscope(id: string, contextWindow: number, maxTokens: number, source:
   };
 }
 
-const QWEN35_DENSE = 262144;
 const QWEN35_LARGE = 1000000;
-const OUTPUT_SMALL = 65536;
 const OUTPUT_LARGE = 131072;
 
 /**

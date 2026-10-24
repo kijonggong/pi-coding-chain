@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TIER_UNKNOWN, tierForHost } from "../coding-fallback/providers.ts";
-import { DASHSCOPE, EXCLUDED_MODELS, EXPLABS, MAX_OUTPUT_CAVEAT, PROVIDERS, modelIds } from "./catalog.ts";
+import { DASHSCOPE, EXCLUDED_MODELS, EXPLABS, PROVIDERS, modelIds } from "./catalog.ts";
 import { providerConfig, report } from "./index.ts";
 
 function hostOf(baseUrl: string): string {
@@ -67,10 +67,8 @@ test("every model carries the fields registerProvider requires", () => {
 });
 
 test("an output limit never reaches the context window", () => {
-  // Two Alibaba pages publish a maximum output equal to the context window,
-  // which leaves no room for the prompt. Overstating maxTokens makes the
-  // provider reject the request, so those entries take the smaller figure and
-  // this test keeps a later edit from pasting the published number back in.
+  // An output limit equal to the context window leaves no room for the prompt,
+  // and the provider rejects a request that overstates maxTokens.
   for (const provider of PROVIDERS) {
     for (const model of provider.models) {
       assert.ok(
@@ -79,7 +77,6 @@ test("an output limit never reaches the context window", () => {
       );
     }
   }
-  assert.ok(MAX_OUTPUT_CAVEAT.includes("context window"));
 });
 
 test("model ids are unique within and across providers", () => {

@@ -449,9 +449,9 @@ async function openFallbackEditor(ctx: ExtensionCommandContext): Promise<void> {
   // `ctx.ui.custom` belongs to the interactive TUI: RPC and print modes answer
   // `undefined` for it, so the editor is only offered where it can be drawn.
   if (ctx?.hasUI !== true || ctx.mode !== "tui") {
-    notify(
+    ctx?.ui?.notify?.(
       `${COMMAND}: the chain editor needs the TUI (this session is "${ctx?.mode ?? "none"}"). ` +
-        `Use \`/aaii-router set pinned <provider/id,...>\` or \`/aaii-router set models <provider/id,...>\` here, or edit ${path}.`,
+        `Use \`/aaii-router set pinned <provider/id,...>\` or \`/aaii-router set excluded <provider/id,...>\` here, or edit ${path}.`,
       "warning",
     );
     return;

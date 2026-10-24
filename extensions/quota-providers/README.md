@@ -83,8 +83,8 @@ promotion, and `catalog.ts` records which of the two the numbers are.
 Limits are not guessed. Every entry records its source, and `catalog.ts`
 documents the rules:
 
-- **`endpoint`** — the provider's own `/models` response, read directly. Both
-  ExpLabs entries use this; it publishes `context_window_tokens` and
+- **`endpoint`** — the provider's own `/models` response, read directly. Every
+  ExpLabs entry uses this; it publishes `context_window_tokens` and
   `maximum_output_tokens`.
 - **`alibaba:<slug>`** — Alibaba's published model page at
   `help.aliyun.com/zh/model-studio/<slug>`.
@@ -92,15 +92,9 @@ documents the rules:
 Where Alibaba publishes the same limits for a dated snapshot as for its base
 model, the snapshot carries the base model's figures.
 
-### One deliberate deviation
-
-Two Alibaba pages publish a maximum output equal to the entire context window
-(`kimi-k3` and `kimi-k2.7-code`). That cannot be right — an output limit equal
-to the input limit leaves no room for the prompt. Overstating `maxTokens` makes
-the provider reject the request, while understating it only caps planned output,
-so both entries take the smaller figure Pi's own catalog carries for the same
-upstream model. `catalog.ts` exports `MAX_OUTPUT_CAVEAT` for it, and a test
-keeps a later edit from pasting the published number back in.
+An output limit equal to the context window would leave no room for the prompt,
+and a provider rejects a request that overstates `maxTokens`, so a test checks
+that every entry's output limit stays under its context window.
 
 ## The one target it does not register
 

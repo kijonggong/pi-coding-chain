@@ -105,6 +105,8 @@ async function harness(t: { after: (cleanup: () => Promise<void>) => void }, ini
     },
     fallback: async (...input: string[]) => { keys = input; await command("fallback", ctx); },
     notifications, statuses,
+    /** The host session double, so a test can switch it out of the TUI. */
+    session: ctx as unknown as { mode: string },
   };
 }
 
@@ -193,6 +195,17 @@ test("settings window reset restores the head while operator preferences preserv
   await h.command("set vision off");
   await h.command("set status off");
   assert.equal((await h.request(sticky)).state.label, "two/b");
+});
+
+test("fallback outside the TUI warns and names the scriptable keys instead of throwing", async (t) => {
+  const h = await harness(t);
+  h.session.mode = "rpc";
+  await h.command("fallback");
+  assert.equal(h.notifications.length, 1);
+  assert.equal(h.notifications[0].type, "warning");
+  assert.match(h.notifications[0].message, /the chain editor needs the TUI \(this session is "rpc"\)/);
+  assert.match(h.notifications[0].message, /set pinned <provider\/id,\.\.\.>/);
+  assert.match(h.notifications[0].message, /set excluded <provider\/id,\.\.\.>/);
 });
 
 test("routing refuses a chain with no eligible models", async (t) => {

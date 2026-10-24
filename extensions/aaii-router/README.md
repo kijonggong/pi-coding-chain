@@ -66,7 +66,7 @@ project file cannot set it, for the same reason it cannot set `providers`.
 | AAII scores | `aaii-scores.json`, read from disk; `retrieved` is printed by `/aaii-router` | no — refresh with `node extensions/coding-fallback/fetch-scores.mjs`. Nothing fetches it at run time |
 | Quota tier per host | the table in `coding-fallback/providers.ts` | no — a declaration; a new host is `no tier` until the table is edited |
 | Pins and per-model exclusions | the `pinned` and `excluded` settings, edited in `/aaii-router fallback` | no — an operator decision, applied on top of the score order |
-| The `monthly` and `credit` provider catalogs | `quota-providers/catalog.ts`, 29 + 2 models written by hand with their sources | no — a model an upstream publishes tomorrow is not discovered |
+| The `monthly` and `credit` provider catalogs | `quota-providers/catalog.ts`, written by hand with their sources (see its README) | no — a model an upstream publishes tomorrow is not discovered |
 
 Three consequences worth knowing before trusting the order:
 
@@ -277,7 +277,7 @@ says so and names the scriptable form instead:
 
 ```text
 /aaii-router set pinned openrouter/qwen3.8-max,commandcode/Kimi-K2
-/aaii-router set models dashscope/glm-5
+/aaii-router set excluded dashscope/glm-5
 ```
 
 ## Commands
