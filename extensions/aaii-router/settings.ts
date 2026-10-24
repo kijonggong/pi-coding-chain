@@ -15,6 +15,7 @@
  * validates what a human would otherwise have to spell correctly.
  */
 
+import { parseProviderUrl } from "../coding-fallback/providers.ts";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DEFAULT_EXCLUDED_ORIGINS } from "./candidates.ts";
@@ -24,7 +25,7 @@ import { DEFAULT_COOLDOWN_MS } from "./cooldown.ts";
  * actually applies, rather than repeating them. */
 export { DEFAULT_COOLDOWN_MS, DEFAULT_EXCLUDED_ORIGINS };
 
-export const SETTING_KEYS = ["cooldown", "vision", "status", "origins", "providers", "models"] as const;
+export const SETTING_KEYS = ["cooldown", "vision", "status", "origins", "providers", "models", "pinned", "excluded"] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export interface Settings {
@@ -43,6 +44,10 @@ export interface Settings {
    * A provider with no entry keeps every model.
    */
   readonly allowedModels: readonly string[];
+  /** Candidate labels to try first, in the operator's order. */
+  readonly pinnedModels: readonly string[];
+  /** Candidate labels to leave out without excluding their whole provider. */
+  readonly excludedModels: readonly string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -52,6 +57,8 @@ export const DEFAULT_SETTINGS: Settings = {
   excludedOrigins: DEFAULT_EXCLUDED_ORIGINS,
   excludedProviders: [],
   allowedModels: [],
+  pinnedModels: [],
+  excludedModels: [],
 };
 
 export type SettingKind = "duration" | "toggle" | "list";
@@ -118,6 +125,22 @@ export const SETTINGS: readonly SettingDescriptor[] = [
     help: "Limit a provider to the models listed for it, comma separated as provider/id, e.g. commandcode/deepseek/deepseek-v4.1-flash. A provider with no entry keeps every model.",
     value: (settings) => (settings.allowedModels.length > 0 ? settings.allowedModels.join(", ") : "none"),
   },
+  {
+    key: "pinned",
+    label: "Pinned models",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_PINNED",
+    help: "Candidate labels to try first, in order, comma separated as provider/id. Missing candidates are ignored until available.",
+    value: (settings) => (settings.pinnedModels.length > 0 ? settings.pinnedModels.join(", ") : "none"),
+  },
+  {
+    key: "excluded",
+    label: "Excluded models",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_EXCLUDE_MODELS",
+    help: "Candidate labels to leave out of the chain, comma separated as provider/id.",
+    value: (settings) => (settings.excludedModels.length > 0 ? settings.excludedModels.join(", ") : "none"),
+  },
 ];
 
 /** `300000` -> `5m`. Used for display; the file always holds milliseconds. */
@@ -153,17 +176,13 @@ export interface ParsedSettings {
 const DURATION = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/i;
 const PROVIDER_ID = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const MODEL_ENTRY = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/(\S+)$/;
-const TOGGLE_ON = new Set(["on", "true", "yes", "1"]);
-const TOGGLE_OFF = new Set(["off", "false", "no", "0"]);
+const TOGGLE_ON = new Set(["on", "true", "yes", "1", "enable", "enabled"]);
+const TOGGLE_OFF = new Set(["off", "false", "no", "0", "disable", "disabled"]);
+const TOGGLE_WORDS = [...TOGGLE_ON, ...TOGGLE_OFF].join(", ");
 
 function originOf(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return undefined;
-  }
+  const source = parseProviderUrl(value);
+  return source?.protocol === "http:" || source?.protocol === "https:" ? source.origin : undefined;
 }
 
 /** `5m`, `300s`, `300000` -> milliseconds. `off` and `0` -> 0 (disabled). */
@@ -186,7 +205,7 @@ export function parseToggle(text: string): boolean | undefined {
   return undefined;
 }
 
-/** Split a comma (or whitespace) separated list, dropping blanks and repeats. */
+/** Split a comma or newline separated list, dropping blanks and repeats. */
 export function parseList(text: string): string[] {
   const parts = text.split(/[,\n]/).map((part) => part.trim()).filter((part) => part !== "");
   return [...new Set(parts)];
@@ -198,7 +217,7 @@ export function parseList(text: string): string[] {
  * only the first separator is structural. A bare model id is rejected: it
  * would say nothing about which provider it restricts.
  */
-export function parseAllowedModels(text: string): {
+export function parseModelEntries(text: string): {
   readonly models?: string[];
   readonly rejected: string[];
 } {
@@ -247,7 +266,7 @@ export function editSetting(
     case "vision":
     case "status": {
       const value = parseToggle(raw);
-      if (value === undefined) return { ok: false, reason: `expected on or off, got: ${raw.trim()}` };
+      if (value === undefined) return { ok: false, reason: `expected ${TOGGLE_WORDS}, got: ${raw.trim()}` };
       return { ok: true, settings: key === "vision" ? { ...settings, preferVision: value } : { ...settings, statusLine: value } };
     }
     case "origins": {
@@ -261,10 +280,13 @@ export function editSetting(
       if (bad.length > 0) return { ok: false, reason: `not a provider id: ${bad.join(", ")}` };
       return { ok: true, settings: { ...settings, excludedProviders: providers } };
     }
-    case "models": {
-      const { models, rejected } = parseAllowedModels(raw);
+    case "models":
+    case "pinned":
+    case "excluded": {
+      const { models, rejected } = parseModelEntries(raw);
       if (models === undefined) return { ok: false, reason: `not provider/id: ${rejected.join(", ")}` };
-      return { ok: true, settings: { ...settings, allowedModels: models } };
+      const field = key === "models" ? "allowedModels" : key === "pinned" ? "pinnedModels" : "excludedModels";
+      return { ok: true, settings: { ...settings, [field]: models } };
     }
   }
 }
@@ -322,22 +344,17 @@ export function parseSettings(text: string): ParsedSettings {
   return { settings, notes, applied };
 }
 
+/** One mapping for merging file keys and comparing their in-memory values. */
+const SETTING_FIELDS = {
+  cooldown: "cooldownMs", vision: "preferVision", status: "statusLine",
+  origins: "excludedOrigins", providers: "excludedProviders",
+  models: "allowedModels", pinned: "pinnedModels", excluded: "excludedModels",
+} as const satisfies Record<SettingKey, keyof Settings>;
+
 /** Copy one field from `source` onto `target`. */
 function copyField(target: Settings, source: Settings, key: SettingKey): Settings {
-  switch (key) {
-    case "cooldown":
-      return { ...target, cooldownMs: source.cooldownMs };
-    case "vision":
-      return { ...target, preferVision: source.preferVision };
-    case "status":
-      return { ...target, statusLine: source.statusLine };
-    case "origins":
-      return { ...target, excludedOrigins: source.excludedOrigins };
-    case "providers":
-      return { ...target, excludedProviders: source.excludedProviders };
-    case "models":
-      return { ...target, allowedModels: source.allowedModels };
-  }
+  const field = SETTING_FIELDS[key];
+  return { ...target, [field]: source[field] };
 }
 
 /**
@@ -349,6 +366,18 @@ function copyField(target: Settings, source: Settings, key: SettingKey): Setting
  * the footer is drawn); it may not change who serves the request.
  */
 export const PROJECT_KEYS: readonly SettingKey[] = ["cooldown", "vision", "status"];
+
+/** Whether a saved change redirects requests rather than changing operator preferences. */
+export function routingChanged(before: Settings, after: Settings): boolean {
+  return SETTING_KEYS.filter((key) => !PROJECT_KEYS.includes(key)).some((key) => {
+    const field = SETTING_FIELDS[key];
+    const previous = before[field];
+    const next = after[field];
+    return Array.isArray(previous) && Array.isArray(next)
+      ? previous.length !== next.length || previous.some((value, index) => value !== next[index])
+      : previous !== next;
+  });
+}
 
 export interface SettingsSources {
   /** Text of the global settings file, when it could be read. */
@@ -415,6 +444,8 @@ export function serializeSettings(settings: Settings): string {
     origins: [...settings.excludedOrigins],
     providers: [...settings.excludedProviders],
     models: [...settings.allowedModels],
+    pinned: [...settings.pinnedModels],
+    excluded: [...settings.excludedModels],
   };
   return `${JSON.stringify(body, null, 2)}\n`;
 }
@@ -440,6 +471,7 @@ export interface Subcommand {
 
 export const SUBCOMMANDS: readonly Subcommand[] = [
   { value: "settings", description: "Open the settings window" },
+  { value: "fallback", description: "Open the fallback chain editor" },
   { value: "set", description: "Set one value without the window: set <key> <value>" },
   { value: "reset", description: "Write the default settings" },
   { value: "next", description: "Take the current candidate out for one cooldown window" },
@@ -483,9 +515,14 @@ export function completionsFor(prefix: string): Subcommand[] {
 /** Where the settings are written to, when nothing overrides it. */
 export const SETTINGS_FILE = "aaii-router.json";
 
-/** A file's text, or `undefined` when it is absent or unreadable. */
+/** A file's text, or `undefined` when it is absent. */
 export async function readSettingsFile(path: string): Promise<string | undefined> {
-  return readFile(path, "utf8").catch(() => undefined);
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error(`cannot read settings ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
 }
 
 export interface SettingsFiles {

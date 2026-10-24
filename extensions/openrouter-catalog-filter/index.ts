@@ -89,12 +89,18 @@ type CatalogModel = ProviderModelConfig & { id: string };
 /** Which of the three catalog sources answered. */
 type CatalogSource = "remote" | "store" | "builtin";
 
+interface SkippedCatalogSource {
+  readonly source: CatalogSource;
+  readonly reason: string;
+}
+
 interface LoadedCatalog {
   /** What the allowlist keeps. */
   readonly models: CatalogModel[];
   /** How many the catalog offered before the allowlist. */
   readonly total: number;
   readonly source: CatalogSource;
+  readonly skipped: readonly SkippedCatalogSource[];
 }
 
 function isAllowedModel(id: string): boolean {
@@ -137,7 +143,7 @@ function toModels(payload: unknown): CatalogModel[] {
   return [];
 }
 
-function filterModels(models: unknown[]): CatalogModel[] {
+function filterModels(models: readonly unknown[]): CatalogModel[] {
   return models.flatMap((model) => {
     if (!model || typeof model !== "object") {
       return [];
@@ -153,8 +159,12 @@ function filterModels(models: unknown[]): CatalogModel[] {
 }
 
 /** Apply the allowlist, and record what it read, for the report. */
-function applyAllowlist(models: unknown[], source: CatalogSource): LoadedCatalog {
-  return { models: filterModels(models), total: models.length, source };
+function applyAllowlist(
+  models: readonly unknown[],
+  source: CatalogSource,
+  skipped: readonly SkippedCatalogSource[] = [],
+): LoadedCatalog {
+  return { models: filterModels(models), total: models.length, source, skipped };
 }
 
 async function fetchRemoteModels(signal?: AbortSignal): Promise<CatalogModel[]> {
@@ -196,36 +206,74 @@ async function fetchRemoteCatalog(signal?: AbortSignal): Promise<LoadedCatalog> 
   return catalog;
 }
 
-async function readStoredModels(): Promise<LoadedCatalog | undefined> {
+async function readStoredModels(
+  skipped: readonly SkippedCatalogSource[],
+): Promise<
+  | { readonly ok: true; readonly catalog: LoadedCatalog }
+  | { readonly ok: false; readonly reason: string }
+> {
+  const catalogPath = join(getAgentDir(), "models-store.json");
+  let text: string;
   try {
-    const catalogPath = join(getAgentDir(), "models-store.json");
-    const catalog = JSON.parse(await readFile(catalogPath, "utf8")) as {
-      openrouter?: unknown;
-    };
-    const loaded = applyAllowlist(toModels(catalog.openrouter ?? catalog), "store");
-    return loaded.models.length > 0 ? loaded : undefined;
-  } catch {
-    return undefined;
+    text = await readFile(catalogPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return { ok: false, reason: "the file was missing" };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, reason: `could not read ${catalogPath}: ${message}` };
   }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "the JSON was broken" };
+  }
+
+  const payload =
+    raw && typeof raw === "object"
+      ? (raw as { openrouter?: unknown }).openrouter ?? raw
+      : raw;
+  const loaded = applyAllowlist(toModels(payload), "store", skipped);
+  if (loaded.models.length === 0) {
+    return { ok: false, reason: "there were no allowed models" };
+  }
+  return { ok: true, catalog: loaded };
 }
 
-function builtinFallbackModels(): LoadedCatalog {
-  return applyAllowlist(getBuiltinModels("openrouter") as unknown as unknown[], "builtin");
+function builtinFallbackModels(
+  skipped: readonly SkippedCatalogSource[],
+): LoadedCatalog {
+  return applyAllowlist(getBuiltinModels("openrouter"), "builtin", skipped);
 }
 
 async function loadCatalog(
   signal?: AbortSignal,
   allowNetwork = true,
 ): Promise<LoadedCatalog> {
-  if (process.env.PI_OFFLINE === "1" || !allowNetwork) {
-    return (await readStoredModels()) ?? builtinFallbackModels();
+  const skipped: SkippedCatalogSource[] = [];
+
+  if (process.env.PI_OFFLINE === "1") {
+    skipped.push({ source: "remote", reason: "PI_OFFLINE=1" });
+  } else if (!allowNetwork) {
+    skipped.push({ source: "remote", reason: "network disabled" });
+  } else {
+    try {
+      return await fetchRemoteCatalog(signal);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      skipped.push({ source: "remote", reason });
+    }
   }
 
-  try {
-    return await fetchRemoteCatalog(signal);
-  } catch {
-    return (await readStoredModels()) ?? builtinFallbackModels();
+  const stored = await readStoredModels(skipped);
+  if (stored.ok) {
+    return stored.catalog;
   }
+  skipped.push({ source: "store", reason: stored.reason });
+
+  return builtinFallbackModels(skipped);
 }
 
 function statePath(): string {
@@ -233,11 +281,21 @@ function statePath(): string {
   return override && override.trim() !== "" ? override : join(getAgentDir(), STATE_FILE);
 }
 
+function formatCatalogSource(catalog: LoadedCatalog): string {
+  if (catalog.skipped.length === 0) {
+    return catalog.source;
+  }
+  const details = catalog.skipped
+    .map((item) => `${item.source} skipped: ${item.reason}`)
+    .join("; ");
+  return `${catalog.source}; ${details}`;
+}
+
 function report(state: ResolvedState, catalog: LoadedCatalog, path: string): string {
   const lines = [`${COMMAND}: ${describeState(state, path)}`];
   lines.push(
     state.enabled
-      ? `catalog: ${catalog.models.length} of ${catalog.total} models visible (${catalog.source})`
+      ? `catalog: ${catalog.models.length} of ${catalog.total} models visible (${formatCatalogSource(catalog)})`
       : "override: removed, so Pi composes the OpenRouter provider itself",
   );
   for (const note of state.notes) lines.push(`! ${note}`);
@@ -302,7 +360,7 @@ export default async function (pi: ExtensionAPI) {
           ctx.ui?.notify?.(
             `${COMMAND}: allowlist ${state.enabled ? "on" : "off"} — ` +
               (state.enabled
-                ? `${catalog.models.length} of ${catalog.total} OpenRouter models visible (${catalog.source})`
+                ? `${catalog.models.length} of ${catalog.total} OpenRouter models visible (${formatCatalogSource(catalog)})`
                 : "Pi composes the OpenRouter provider itself") +
               (overridden ? ` (written, but ${STATE_ENV} decides this session until it changes)` : ""),
             overridden ? "warning" : "info",

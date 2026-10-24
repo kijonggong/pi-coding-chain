@@ -24,7 +24,7 @@ import {
   editSetting,
   loadSettings,
   milliseconds,
-  parseAllowedModels,
+  parseModelEntries,
   parseDuration,
   parseList,
   parseOrigins,
@@ -57,8 +57,8 @@ test("reads a duration in the units an operator would write", () => {
 });
 
 test("reads a toggle the way a settings file would spell it", () => {
-  for (const on of ["on", "true", "yes", "1", "ON"]) assert.equal(parseToggle(on), true, on);
-  for (const off of ["off", "false", "no", "0", " Off "]) assert.equal(parseToggle(off), false, off);
+  for (const on of ["on", "true", "yes", "1", "enable", "enabled", "ON", "Enabled"]) assert.equal(parseToggle(on), true, on);
+  for (const off of ["off", "false", "no", "0", "disable", "disabled", " Off ", "Disabled"]) assert.equal(parseToggle(off), false, off);
   assert.equal(parseToggle("maybe"), undefined);
   assert.equal(parseToggle(""), undefined);
 });
@@ -87,7 +87,7 @@ test("validates one setting at a time, so the wizard can refuse a typo", () => {
   });
   assert.deepEqual(editSetting(DEFAULT_SETTINGS, "status", "maybe"), {
     ok: false,
-    reason: "expected on or off, got: maybe",
+    reason: "expected on, true, yes, 1, enable, enabled, off, false, no, 0, disable, disabled, got: maybe",
   });
   assert.deepEqual(editSetting(DEFAULT_SETTINGS, "origins", "ftp://x"), {
     ok: false,
@@ -100,6 +100,8 @@ test("validates one setting at a time, so the wizard can refuse a typo", () => {
 
   const vision = editSetting(DEFAULT_SETTINGS, "vision", "off");
   assert.equal(vision.ok && vision.settings.preferVision, false);
+  const status = editSetting(DEFAULT_SETTINGS, "status", "disable");
+  assert.equal(status.ok && status.settings.statusLine, false);
   const providers = editSetting(DEFAULT_SETTINGS, "providers", "openrouter, litellm");
   assert.deepEqual(providers.ok && providers.settings.excludedProviders, ["openrouter", "litellm"]);
   // The settings that were not named are not disturbed.
@@ -119,7 +121,7 @@ test("validates one setting at a time, so the wizard can refuse a typo", () => {
     reason: "not provider/id: deepseek-v4.1-flash",
   });
   assert.deepEqual(editSetting(DEFAULT_SETTINGS, "models", "/deepseek-v4.1-flash").ok, false);
-  assert.deepEqual(parseAllowedModels("a/b, c").rejected, ["c"]);
+  assert.deepEqual(parseModelEntries("a/b, c").rejected, ["c"]);
 });
 
 test("reports what a file said that could not be used instead of guessing", () => {
@@ -213,6 +215,8 @@ test("writes a file it can read back", () => {
     "origins",
     "providers",
     "models",
+    "pinned",
+    "excluded",
   ]);
   assert.ok(text.endsWith("\n"));
 });
@@ -239,6 +243,70 @@ test("the environment can hold the allowlist, and a bare model id is refused", (
     "ignored PI_AAII_ROUTER_ALLOW_MODELS: not provider/id: deepseek-v4.1-flash",
   ]);
   assert.deepEqual(bad.settings.allowedModels, []);
+});
+
+test("model labels require both provider and id, deduplicate, and allow nested model ids", () => {
+  for (const key of ["pinned", "excluded"] as const) {
+    for (const invalid of ["model", "/model", "provider/", "provider/ ", " /model"]) {
+      const edited = editSetting(DEFAULT_SETTINGS, key, invalid);
+      assert.equal(edited.ok, false, `${key}: ${invalid}`);
+      if (!edited.ok) assert.match(edited.reason, /not provider\/id/);
+    }
+    const edited = editSetting(DEFAULT_SETTINGS, key, "openrouter/anthropic/model, direct/model, openrouter/anthropic/model");
+    assert.equal(edited.ok, true);
+    assert.deepEqual(edited.ok && edited.settings[key === "pinned" ? "pinnedModels" : "excludedModels"], ["openrouter/anthropic/model", "direct/model"]);
+    const empty = editSetting(DEFAULT_SETTINGS, key, "");
+    assert.deepEqual(empty.ok && empty.settings[key === "pinned" ? "pinnedModels" : "excludedModels"], []);
+  }
+});
+
+test("pins and model exclusions round-trip, describe their values, and accept environment overrides", () => {
+  const settings = { ...DEFAULT_SETTINGS, pinnedModels: ["a/first", "b/second"], excludedModels: ["c/third"] };
+  assert.deepEqual(parseSettings(serializeSettings(settings)).settings, settings);
+  assert.deepEqual(parseSettings(serializeSettings(settings)).notes, []);
+  const lines = describeSettings(settings);
+  assert.ok(lines.includes("Pinned models: a/first, b/second"));
+  assert.ok(lines.includes("Excluded models: c/third"));
+  const resolved = resolveSettings({ global: serializeSettings(settings), env: {
+    PI_AAII_ROUTER_PINNED: "d/fourth", PI_AAII_ROUTER_EXCLUDE_MODELS: "e/fifth",
+  } });
+  assert.deepEqual(resolved.settings.pinnedModels, ["d/fourth"]);
+  assert.deepEqual(resolved.settings.excludedModels, ["e/fifth"]);
+  assert.deepEqual(resolved.notes, []);
+});
+
+// Interactive edits, files and environment are three separate trust boundaries.
+test("model labels reject internal whitespace through edits, files and environment", () => {
+  for (const key of ["pinned", "excluded"] as const) {
+    for (const invalid of ["open router/model", "provider/ model", "provider/model name", "a/b c/d", "provider/\tmodel", "provider /model"]) {
+      assert.equal(editSetting(DEFAULT_SETTINGS, key, invalid).ok, false, `${key}: ${invalid}`);
+      const parsed = parseSettings(JSON.stringify({ [key]: [invalid] }));
+      assert.deepEqual(parsed.applied, []);
+      assert.match(parsed.notes[0], /not provider\/id/);
+      const envVar = key === "pinned" ? "PI_AAII_ROUTER_PINNED" : "PI_AAII_ROUTER_EXCLUDE_MODELS";
+      const resolved = resolveSettings({ env: { [envVar]: invalid } });
+      assert.deepEqual(resolved.settings, DEFAULT_SETTINGS);
+      assert.match(resolved.notes[0], /not provider\/id/);
+    }
+    const edited = editSetting(DEFAULT_SETTINGS, key, " provider/nested/model \n other/model, provider/nested/model ");
+    assert.deepEqual(edited.ok && edited.settings[key === "pinned" ? "pinnedModels" : "excludedModels"], ["provider/nested/model", "other/model"]);
+  }
+  assert.deepEqual(parseList("a/b c/d, e/f\ng/h"), ["a/b c/d", "e/f", "g/h"]);
+});
+
+test("project files cannot change pins or model exclusions and older files need no migration", () => {
+  const settings = { ...DEFAULT_SETTINGS, pinnedModels: ["a/first"], excludedModels: ["b/second"] };
+  const resolved = resolveSettings({ global: serializeSettings(settings), project: JSON.stringify({ pinned: ["c/third"], excluded: ["a/first"] }) });
+  assert.deepEqual(resolved.settings, settings);
+  assert.deepEqual(resolved.notes, [
+    'ignored project setting "pinned": a project may not change where requests go',
+    'ignored project setting "excluded": a project may not change where requests go',
+  ]);
+  assert.ok(!PROJECT_KEYS.includes("pinned") && !PROJECT_KEYS.includes("excluded"));
+  const old = parseSettings(JSON.stringify({ cooldown: 300000, vision: true, status: true, origins: [], providers: [] }));
+  assert.deepEqual(old.notes, []);
+  assert.deepEqual(old.settings.pinnedModels, []);
+  assert.deepEqual(old.settings.excludedModels, []);
 });
 
 test("shows one line per setting, marking the ones the environment holds", () => {

@@ -39,6 +39,7 @@ pi install git:github.com/kijonggong/pi-coding-chain@main
                                    the same registration without the picker
 
 /aaii-router                       list the candidates in order, with score, tier and cooldown
+/aaii-router fallback              edit the chain: pin, exclude and reorder candidates
 /aaii-router settings              open the settings window
 /aaii-router set <key> <value>     write one setting without the window
 /aaii-router reset                 write the default settings
@@ -50,15 +51,36 @@ pi install git:github.com/kijonggong/pi-coding-chain@main
 /openrouter-catalog-filter         report the allowlist state and what decided it (status)
 /openrouter-catalog-filter list    print the models the allowlist keeps
 /openrouter-catalog-filter on|off  write the switch (the environment still wins)
+/openrouter-catalog-filter reload  fetch the catalog again and reapply
 ```
 
 ## Tests
 
+The tests run on Node's built-in runner with TypeScript type stripping and need
+no network:
+
 ```bash
-node --test extensions/*/*.test.ts
+PI_OFFLINE=1 PI_CODING_FALLBACK_FREE_REFRESH=off node --test extensions/*/*.test.ts
 ```
 
-Two tests read the live LiteLLM config to prove the generated blocks match it;
-they fail rather than skip when that file has been replaced by a config the
-composer does not understand. Everything else runs on fixtures in the system
-temp directory.
+In PowerShell:
+
+```powershell
+$env:PI_OFFLINE='1'; $env:PI_CODING_FALLBACK_FREE_REFRESH='off'; node --test extensions/*/*.test.ts
+```
+
+Every test runs on fixtures in the system temp directory; none reads the live
+LiteLLM config or skips when a file is absent. The Pi SDK is stubbed only at the
+package boundary: `test-support/module-harness.ts` copies the real modules
+beside the stub packages a test supplies, so no product code carries a
+test-only path.
+
+## Repository layout
+
+```text
+extensions/<name>/             one directory per extension, each with its README and tests
+test-support/                  the shared module harness for tests that import the Pi SDK
+docs/engineering-standard.md   the engineering standard changes are reviewed against
+_research/                     review records: findings, dispositions, mutation checks
+WORKLOG.md                     work log (Korean)
+```

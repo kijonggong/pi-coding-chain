@@ -17,6 +17,13 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+/** The score owner resolves the override and its module-relative default. */
+export function resolveScoresPath(): string {
+  const override = process.env.PI_CODING_FALLBACK_SCORES;
+  return override && override.trim() !== "" ? override : fileURLToPath(new URL("./aaii-scores.json", import.meta.url));
+}
 
 export interface AaiiScore {
   /** Artificial Analysis slug the score came from, when it resolved. */
@@ -105,13 +112,18 @@ export function parseScores(text: string): ScoreSnapshot | undefined {
   };
 }
 
-/** Read a snapshot. A missing or malformed file yields an empty table, not an error. */
+/** Read a snapshot. Only a missing file yields an empty table. */
 export async function loadScores(snapshotPath: string): Promise<ScoreSnapshot> {
+  let text: string;
   try {
-    return parseScores(await readFile(snapshotPath, "utf8")) ?? EMPTY;
-  } catch {
-    return EMPTY;
+    text = await readFile(snapshotPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return EMPTY;
+    throw new Error(`cannot read scores ${snapshotPath}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+  const snapshot = parseScores(text);
+  if (!snapshot) throw new Error(`invalid scores ${snapshotPath}: malformed JSON or unusable snapshot`);
+  return snapshot;
 }
 
 /**
@@ -131,12 +143,7 @@ export function aliasMapsFromSnapshot(text: string): {
   readonly aliases: Record<string, string>;
   readonly aliasNotes: Record<string, string>;
 } {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return { aliases: {}, aliasNotes: {} };
-  }
+  const raw: unknown = JSON.parse(text);
   const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
 
   const strings = (value: unknown): Record<string, string> => {

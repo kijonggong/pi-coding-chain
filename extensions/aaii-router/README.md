@@ -18,7 +18,14 @@ then gives up. Model-to-model fail-over is what this extension adds.
 
 ## Ordering policy
 
-The order is the same one `coding-fallback` writes into the LiteLLM config:
+Pins come first. With `pinned` set, the labeled models lead the chain in the
+order the operator wrote, and everything the operator did not touch keeps the
+order below. A model named in `excluded` is dropped from the chain without
+excluding the rest of its provider. Both lists are edited in
+`/aaii-router fallback`, below.
+
+The rest of the order is the same one `coding-fallback` writes into the LiteLLM
+config:
 
 1. **AAII score descending.** A model the index does not cover sorts after every
    scored model. A score that has to be inferred from a sibling model is an
@@ -58,6 +65,7 @@ project file cannot set it, for the same reason it cannot set `providers`.
 | Which models are candidates | Pi's live registry for the session (`getModelsOfType("chat")`), filtered to the ones with configured credentials | **yes** — a key added in `auth.json` or `models.json` is a candidate on the next session start, or after `/aaii-router reload` |
 | AAII scores | `aaii-scores.json`, read from disk; `retrieved` is printed by `/aaii-router` | no — refresh with `node extensions/coding-fallback/fetch-scores.mjs`. Nothing fetches it at run time |
 | Quota tier per host | the table in `coding-fallback/providers.ts` | no — a declaration; a new host is `no tier` until the table is edited |
+| Pins and per-model exclusions | the `pinned` and `excluded` settings, edited in `/aaii-router fallback` | no — an operator decision, applied on top of the score order |
 | The `monthly` and `credit` provider catalogs | `quota-providers/catalog.ts`, 29 + 2 models written by hand with their sources | no — a model an upstream publishes tomorrow is not discovered |
 
 Three consequences worth knowing before trusting the order:
@@ -163,12 +171,15 @@ from the operator's configuration, not from a table in the extension.
 | `status` — footer line with the active candidate and the cooling count | `on` | `PI_AAII_ROUTER_STATUS` |
 | `origins` — origins no candidate may use | the LiteLLM proxy | `PI_AAII_ROUTER_EXCLUDE_ORIGINS` |
 | `providers` — providers to leave out of the chain, e.g. `openrouter` | none | `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` |
+| `models` — limit a provider to the `provider/id` entries listed for it | none | `PI_AAII_ROUTER_ALLOW_MODELS` |
+| `pinned` — candidate labels to try first, in this order (`provider/id`) | none | `PI_AAII_ROUTER_PINNED` |
+| `excluded` — candidate labels to leave out of the chain (`provider/id`) | none | `PI_AAII_ROUTER_EXCLUDE_MODELS` |
 
 Settings are read from three sources, in this order:
 
 | Source | File | Scope |
 |---|---|---|
-| global | `~/.pi/agent/aaii-router.json` (`PI_AAII_ROUTER_SETTINGS` points elsewhere) | every setting; this is what the window and `set` write |
+| global | `~/.pi/agent/aaii-router.json` (`PI_AAII_ROUTER_SETTINGS` points elsewhere) | every setting; this is what the window, the chain editor and `set` write |
 | project | `.pi/aaii-router.json` under the session's working directory | `cooldown`, `vision`, `status` only |
 | environment | the variables in the table below | every setting, and it wins |
 
@@ -178,11 +189,16 @@ the old file or the new one and never a half-written one.
 **The project scope is a trust boundary, not a convenience.** A project may
 change how the router treats the operator — how long a failure is remembered,
 whether an image matters, whether the footer is drawn. It may **not** change
-where a request goes: `origins` and `providers` are refused there with a note,
-so a checked-out repository cannot take a supplier out of the chain or add an
-origin to it. A project file is read at all only when Pi trusts the project
+where a request goes: `origins`, `providers`, `models`, `pinned` and `excluded` are refused
+there with a note, so a checked-out repository cannot take a supplier out of the
+chain, add an origin to it, or pin a model of its choosing. A project file is
+read at all only when Pi trusts the project
 (`--approve` or a saved trust decision); when one is present and ignored, the
 report says so rather than leaving the operator to wonder why it did nothing.
+For an untrusted project, only the path's existence is checked; its contents
+are never read. A directory at that path is ignored too. If the existence check
+fails for a reason other than a missing path, the report includes that reason
+and routing continues with global settings and environment overrides.
 That is the same split `pi-star-router` documents for its own project file.
 
 Two rules keep the files honest:
@@ -198,10 +214,77 @@ Two rules keep the files honest:
 The window needs an interactive session (TUI or RPC). Without one, the command
 names the file and the environment variables to use instead.
 
+## Fallback chain editor
+
+```text
+/aaii-router fallback
+```
+
+The chain order is automatic (score, then tier, then `provider/id`), and the
+editor is how an operator overrides it without hand-editing JSON: one list of
+the candidates, a preview of the order produced by the chain settings, and a draft
+that is only written when it is saved.
+
+```text
+aaii-router fallback — ~/.pi/agent/aaii-router.json
+openrouter/qwen3.8-max → commandcode/Kimi-K2 → dashscope/glm-5
+
+▸ 1  openrouter/qwen3.8-max  AAII 41.8
+  2  commandcode/Kimi-K2  AAII 39.5  pinned
+  3  dashscope/glm-5  no AAII score  excluded
+
+↑/↓ move · J/K reorder · p pin · x exclude · d unpin
+r reset · s save · q cancel
+```
+
+| Key | Action |
+|---|---|
+| `↑` `↓`, `k` `j` | move the cursor |
+| `K` `J`, shift+arrows | move the row up or down; the rows it passes are pinned, because a pin is how an order is stored |
+| `p` | pin the row under the cursor, or unpin it; on a `missing` row, explains that dropping goes through `d` |
+| `x` | leave the row out of the chain, or put it back |
+| `d` | take the pin out — press twice, any other key cancels; dropping a `missing` row goes only through `d` twice |
+| `r` | clear every pin and model exclusion |
+| `s`, `enter` | write the chain to the global settings file; stays open on failure so save can be retried |
+| `q`, `esc` | close (Kitty protocol handled by the SDK; respects configured `tui.select.cancel` keybindings); a changed draft asks for a second press before it is discarded |
+
+The preview line is the order produced by the chain settings (pins, exclusions),
+before the per-request image adjustment, so an edit shows its effect before it is
+saved. A pin that matches no candidate
+is kept and drawn as `missing`: it is an operator decision about a model that is
+momentarily absent (a provider out of credential, a catalog refresh), not a typo
+to be silently dropped, and it starts working again when the model returns.
+Pressing `p` on such a row explains that dropping goes only through `d` twice,
+protecting absent pins from accidental deletion.
+
+The draft is written to the global settings file, because pins and exclusions
+decide where a request goes; a project file may not set them. The editor stays
+open until persistence succeeds: if saving fails (e.g. permission denied or disk
+full), the status line reports `save failed: <message>` and preserves the draft so
+the save can be retried without re-entering edits. The file is re-read after the
+save, so the next request uses the new order immediately. An environment
+override (`PI_AAII_ROUTER_PINNED`, `PI_AAII_ROUTER_EXCLUDE_MODELS`) still wins
+for the session; the editor flags active overrides on the header and status line
+from the moment it opens rather than waiting until save.
+
+In narrow viewports (below 30 columns), the editor switches to a compact footer
+(`s save · q cancel`) so that critical exit and save keys survive truncation, and
+places short badges (`[P]`, `[X]`, `[!]`) immediately after the label so row
+status remains visible.
+
+`ctx.ui.custom` is the interactive TUI's. In an RPC or print session the command
+says so and names the scriptable form instead:
+
+```text
+/aaii-router set pinned openrouter/qwen3.8-max,commandcode/Kimi-K2
+/aaii-router set models dashscope/glm-5
+```
+
 ## Commands
 
 ```text
 /aaii-router                      list the candidates in order, with score, tier and cooldown
+/aaii-router fallback             edit the chain: pin, exclude and reorder candidates
 /aaii-router settings             open the settings window
 /aaii-router set <key> <value>    write one value without the window
 /aaii-router reset                write the default settings
@@ -216,8 +299,9 @@ not have to be remembered to be used.
 |---|---|
 | `PI_AAII_ROUTER_SETTINGS` | point at a different settings file |
 | `PI_AAII_ROUTER_COOLDOWN_MS` | cooldown window; default `300000`, `0` disables the failure memory |
-| `PI_AAII_ROUTER_VISION`, `PI_AAII_ROUTER_STATUS` | `on`/`off` for the image order and the footer line |
+| `PI_AAII_ROUTER_VISION`, `PI_AAII_ROUTER_STATUS` | `on`/`off` (accepts `on`, `true`, `yes`, `1`, `enable`, `enabled` / `off`, `false`, `no`, `0`, `disable`, `disabled`) for the image order and the footer line |
 | `PI_AAII_ROUTER_EXCLUDE_ORIGINS`, `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` | comma separated lists, overriding the file |
+| `PI_AAII_ROUTER_PINNED`, `PI_AAII_ROUTER_EXCLUDE_MODELS` | comma separated `provider/id` lists for the chain order, overriding the file |
 | `PI_CODING_FALLBACK_SCORES` | point at a different AAII snapshot (shared with `coding-fallback`) |
 
 ## What it deliberately does not do
@@ -262,7 +346,29 @@ argument completions at each position, a written file read back unchanged, and
 an atomic write that leaves no temporary behind. The file tests use a temp
 directory, never the real one.
 
+`chain-order.test.ts` covers the ordering rule on made-up candidates: pins lead
+in the configured order, a pin that matches no candidate and a repeated pin are
+ignored, the remaining score order survives, and an exclusion beats a pin and
+leaves the other models from the same provider eligible.
+
+`fallback-editor.test.ts` covers the draft without a terminal: the initial row
+order (pins first, excluded last), cursor clamping, `J`/`K` reordering and the
+pins it implies, unpinning back to score order, the double-tap rules for `d` and
+for a dirty `q`, reset, and the settings a save writes.
+
+`fallback-tui.test.ts` drives the component itself with key sequences and
+asserts what it draws and what it resolves: the header, the preview line, the
+`pinned`/`excluded`/`missing` tags, the footer and its armed messages, a save
+returning the edited settings, a cancel returning nothing, and every line
+clamped to the width it is given. Key handling uses the Pi SDK's `matchesKey`
+and configured keybindings (`getKeybindings`). Legacy sequences and the Kitty
+keyboard protocol are handled by the SDK; the component tests verify delegation
+to configured cancel bindings using a simple stub, without testing SDK protocol
+parsing or adding custom escape buffering.
+
 Neither file asserts that any particular model is available today, and no test
 invents a real leaderboard score. The end-to-end path — a session run against
 `aaii/fallback` recording the physical model it routed to — is not covered by a
 test, because it spends a request.
+
+점수 경로는 coding-fallback의 `scores.ts`에서 가져오며 `PI_CODING_FALLBACK_SCORES`를 공유합니다. 점수 파일 없음(ENOENT)은 기존처럼 점수 없는 후보의 tier 순서를 허용하지만, 읽기 오류나 깨진 파일은 경로와 이유를 담은 오류로 registry 구성과 라우팅을 중단합니다. 이전의 조용한 tier 라우팅 대체 동작이 변경되었습니다. 설정 파일도 ENOENT만 없음으로 처리하며 다른 읽기 오류는 전파합니다. 깨진 설정 JSON은 기존 계약대로 note와 기본값을 사용합니다. URL 정규화는 coding-fallback/providers.ts를 공유하고, 설정 origin은 http(s)만 허용합니다. 상태 표시는 headless에서 no-op인 SDK UI 계약을 사용합니다.

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "D1-alias-parse",
+    "detected": true,
+    "test": "coding-fallback/scores.test.ts",
+    "pattern": "aliasMapsFromSnapshot"
+  },
+  {
+    "id": "D1-read",
+    "detected": true,
+    "test": "coding-fallback/fetch-scores.test.ts",
+    "pattern": "refresh refuses"
+  },
+  {
+    "id": "IL-27",
+    "detected": true,
+    "test": "coding-fallback/fetch-scores.test.ts",
+    "pattern": "refresh accepts"
+  },
+  {
+    "id": "D2-read",
+    "detected": true,
+    "test": "coding-fallback/scores.test.ts",
+    "pattern": "loadScores only"
+  },
+  {
+    "id": "D2-parse",
+    "detected": true,
+    "test": "aaii-router/index.test.ts",
+    "pattern": "registry and routing reject"
+  },
+  {
+    "id": "D2-config",
+    "detected": true,
+    "test": "coding-fallback/config.test.ts",
+    "pattern": "check and sync refuse corrupt"
+  },
+  {
+    "id": "C3-default",
+    "detected": true,
+    "test": "coding-fallback/picker.test.ts",
+    "pattern": "add score lookup"
+  },
+  {
+    "id": "C3-env",
+    "detected": true,
+    "test": "coding-fallback/scores.test.ts",
+    "pattern": "score path is"
+  },
+  {
+    "id": "C1",
+    "detected": true,
+    "test": "quota-providers/catalog.test.ts",
+    "pattern": "native ExpLabs"
+  },
+  {
+    "id": "C2-origin",
+    "detected": true,
+    "test": "aaii-router/candidates.test.ts",
+    "pattern": "settings origins match"
+  },
+  {
+    "id": "C2-host",
+    "detected": true,
+    "test": "coding-fallback/chain.test.ts",
+    "pattern": "chain host classification"
+  },
+  {
+    "id": "C2-invalid",
+    "detected": true,
+    "test": "aaii-router/candidates.test.ts",
+    "pattern": "settings origins match"
+  },
+  {
+    "id": "IL-25",
+    "detected": true,
+    "test": "aaii-router/settings.test.ts",
+    "pattern": "settings read and load"
+  },
+  {
+    "id": "IL-21",
+    "detected": true,
+    "test": "aaii-router/index.test.ts",
+    "pattern": "session start clears status"
+  },
+  {
+    "id": "IL-22",
+    "detected": true,
+    "test": "aaii-router/index.test.ts",
+    "pattern": "session start clears status"
+  },
+  {
+    "id": "IL-49",
+    "detected": true,
+    "test": "coding-fallback/picker.test.ts",
+    "pattern": "enter with marks adds"
+  }
+]

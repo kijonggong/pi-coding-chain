@@ -1,0 +1,53 @@
+[
+  {
+    "mutation": "IL31-read",
+    "exitCode": 1,
+    "detected": true,
+    "observations": [
+      "ℹ tests 24",
+      "ℹ fail 3",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {"
+    ]
+  },
+  {
+    "mutation": "IL31-parse",
+    "exitCode": 1,
+    "detected": true,
+    "observations": [
+      "ℹ tests 24",
+      "ℹ fail 3",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {"
+    ]
+  },
+  {
+    "mutation": "IL31-notice",
+    "exitCode": 1,
+    "detected": true,
+    "observations": [
+      "ℹ tests 22",
+      "ℹ fail 1",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {"
+    ]
+  },
+  {
+    "mutation": "IL29-result",
+    "exitCode": 1,
+    "detected": true,
+    "observations": [
+      "ℹ tests 2",
+      "ℹ fail 2",
+      "      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {"
+    ]
+  },
+  {
+    "mutation": "N4-host",
+    "exitCode": 1,
+    "detected": true,
+    "observations": [
+      "ℹ tests 9",
+      "ℹ fail 1"
+    ]
+  }
+]

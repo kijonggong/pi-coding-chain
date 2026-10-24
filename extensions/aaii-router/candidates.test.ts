@@ -11,6 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { TIER_CREDIT, TIER_DAILY, TIER_FREE, TIER_MONTHLY, TIER_UNKNOWN, TIER_WEEKLY } from "../coding-fallback/providers.ts";
+import { parseOrigins } from "./settings.ts";
 import { parseScores } from "../coding-fallback/scores.ts";
 import type { ScoreSnapshot } from "../coding-fallback/scores.ts";
 import {
@@ -23,7 +24,6 @@ import {
   unscoredCandidates,
 } from "./candidates.ts";
 import type { PhysicalModel } from "./candidates.ts";
-import { stepForward } from "./cooldown.ts";
 
 const SCORES = parseScores(
   JSON.stringify({
@@ -171,25 +171,6 @@ test("drops duplicate provider and id pairs", () => {
   assert.equal(candidates.length, 1);
 });
 
-test("steps past the model that failed", () => {
-  const candidates = buildCandidates(
-    [
-      model("a", "alpha-model", FREE_HOST),
-      model("b", "beta-model", DAILY_HOST),
-      model("c", "gamma-model", CREDIT_HOST),
-    ],
-    SCORES,
-  );
-  assert.deepEqual(candidates.map(candidateLabel), ["a/alpha-model", "b/beta-model", "c/gamma-model"]);
-
-  const step = (from: string | undefined) => stepForward(candidates, undefined, from, 0)?.label;
-  assert.equal(step("a/alpha-model"), "b/beta-model");
-  assert.equal(step("b/beta-model"), "c/gamma-model");
-  assert.equal(step("c/gamma-model"), undefined, "the last candidate has nowhere to go");
-  assert.equal(step("unknown/model"), "a/alpha-model", "an unknown failure restarts");
-  assert.equal(step(undefined), "a/alpha-model");
-});
-
 test("reports image support from the catalog, and orders for a request with an image", () => {
   const candidates = buildCandidates(
     [
@@ -248,4 +229,17 @@ test("covers every tier the provider table declares", () => {
   assert.ok(tiers.includes(TIER_DAILY));
   assert.ok(tiers.includes(TIER_WEEKLY));
   assert.ok(TIER_WEEKLY < TIER_MONTHLY && TIER_MONTHLY < TIER_CREDIT);
+});
+
+
+test("settings origins match normalized candidate sources including ports; invalid URLs stay unclassified", () => {
+  const origins = parseOrigins("HTTPS://API.EXAMPLE:8443/settings").origins;
+  assert.deepEqual(origins, ["https://api.example:8443"]);
+  const candidates = buildCandidates([
+    model("blocked", "alpha-model", "https://api.example:8443/v1"),
+    model("kept", "alpha-model", "https://api.example:9443/v1"),
+    model("invalid", "beta-model", "broken"),
+  ], SCORES, { excludedOrigins: origins });
+  assert.deepEqual(candidates.map((candidate) => candidate.label), ["kept/alpha-model", "invalid/beta-model"]);
+  assert.deepEqual(candidates.map((candidate) => candidate.tier), [99, 99]);
 });

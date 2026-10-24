@@ -20,13 +20,13 @@
  * No Pi SDK imports here, so the CLI script and the extension share one path.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   FREE_PROBE_TARGETS,
   buildFreeSnapshot,
   buildProviderSnapshot,
-  parseFreeSnapshot,
+  loadFreeSnapshot,
   snapshotAgeMs,
 } from "./free-models.ts";
 import type { FreeProbeTarget, ProviderFreeSnapshot } from "./free-models.ts";
@@ -72,14 +72,6 @@ async function probe(target: FreeProbeTarget, apiKey: string, timeoutMs: number)
   return response.json();
 }
 
-async function readExisting(path: string): Promise<ReturnType<typeof parseFreeSnapshot>> {
-  try {
-    return parseFreeSnapshot(await readFile(path, "utf8"));
-  } catch {
-    return undefined;
-  }
-}
-
 /** Payload equality ignores `retrieved`, so a re-probe that sees the same listing is not churn. */
 function payloadOf(snapshot: { providers: readonly ProviderFreeSnapshot[] }): string {
   return JSON.stringify(snapshot.providers);
@@ -97,7 +89,14 @@ export async function refreshFreeSnapshot(options: RefreshOptions): Promise<Refr
     now = Date.now(),
   } = options;
 
-  const existing = await readExisting(path);
+  let existing: Awaited<ReturnType<typeof loadFreeSnapshot>>;
+  const failures: string[] = [];
+  try {
+    existing = await loadFreeSnapshot(path);
+  } catch (error) {
+    failures.push(`could not read previous snapshot ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const readNotice = failures.length > 0 ? `; ${failures[0]}` : "";
   const age = snapshotAgeMs(existing, now);
   if (!force && existing && age !== undefined && age < freshnessMs) {
     return {
@@ -109,7 +108,6 @@ export async function refreshFreeSnapshot(options: RefreshOptions): Promise<Refr
   }
 
   const providers: ProviderFreeSnapshot[] = [];
-  const failures: string[] = [];
   const missingKeys: string[] = [];
 
   for (const target of targets) {
@@ -143,7 +141,7 @@ export async function refreshFreeSnapshot(options: RefreshOptions): Promise<Refr
   if (dryRun) {
     return {
       state: changed ? "written" : "refreshed",
-      message: `dry run: read ${providers.length} listing(s); would ${changed ? "write" : "keep"} ${path}`,
+      message: `dry run: read ${providers.length} listing(s); would ${changed ? "write" : "keep"} ${path}${readNotice}`,
       path,
       providers,
     };
@@ -157,7 +155,7 @@ export async function refreshFreeSnapshot(options: RefreshOptions): Promise<Refr
   } catch (error) {
     return {
       state: "error",
-      message: `cannot write ${path} (${error instanceof Error ? error.message : String(error)}); the previous snapshot still applies`,
+      message: `cannot write ${path} (${error instanceof Error ? error.message : String(error)}); the previous snapshot still applies${readNotice}`,
       path,
       providers,
     };

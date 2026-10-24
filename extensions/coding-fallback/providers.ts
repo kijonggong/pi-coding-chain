@@ -106,3 +106,18 @@ export function unclassifiedHosts(hosts: Iterable<string>): string[] {
   }
   return [...missing].sort();
 }
+
+/** Parse API: an invalid provider URL has no source; callers decide its meaning. */
+export function parseProviderUrl(value: string | undefined): {
+  readonly hostname: string;
+  readonly origin: string;
+  readonly protocol: string;
+} | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    return { hostname: url.hostname, origin: `${url.protocol}//${url.host}`, protocol: url.protocol };
+  } catch {
+    return undefined;
+  }
+}

@@ -10,17 +10,11 @@
  */
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
 import { CHAINS, CODING_CHAIN, DASH_SCOPE_CHAIN, composeCodingFallback, readModelEntries } from "./chain.ts";
 import { TIER_CREDIT, TIER_DAILY, TIER_FREE, TIER_MONTHLY, TIER_UNKNOWN, TIER_WEEKLY, tierForHost } from "./providers.ts";
 import { canonicalModelKey, parseScores } from "./scores.ts";
 import type { ScoreSnapshot } from "./scores.ts";
-
-const LIVE_CONFIG =
-  process.env.PI_CODING_FALLBACK_CONFIG ?? join(homedir(), ".pi", "agent", "litellm_config.yaml");
 
 /** Fixture scores. Made-up numbers on made-up models, not real AAII values. */
 const FIXTURE_SCORES = parseScores(
@@ -35,8 +29,6 @@ const FIXTURE_SCORES = parseScores(
     aliases: {},
   }),
 ) as ScoreSnapshot;
-
-const EMPTY_SCORES = parseScores(JSON.stringify({ scores: {}, aliases: {} })) as ScoreSnapshot;
 
 const SYNTHETIC = [
   "model_list:",
@@ -67,6 +59,69 @@ const SYNTHETIC = [
   "  - stale:",
   "    - stale",
   "  num_retries: 2",
+  "general_settings:",
+  "  store_model_in_db: false",
+  "",
+].join("\n");
+
+/**
+ * A full config in the shape the composer sees in practice: every model_list
+ * entry, both generated blocks, and router_settings keys after `fallbacks`.
+ * A fixture stands in for the live file, which is machine-specific and can be
+ * mid-edit.
+ */
+const REALISTIC = [
+  "model_list:",
+  "- model_name: code-1-explabs",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: https://api.experientiallabs.ai/v1",
+  "    api_key: os.environ/EXPERIENTIAL_API_KEY",
+  "- model_name: code-2-nvidia",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: https://integrate.api.nvidia.com/v1",
+  "    api_key: os.environ/NVIDIA_API_KEY",
+  "- model_name: code-3-dashscope",
+  "  litellm_params:",
+  "    model: openai/model-y",
+  "    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "    api_key: os.environ/DASHSCOPE_API_KEY",
+  "- model_name: code-4-unknown",
+  "  litellm_params:",
+  "    model: openai/model-never-scored",
+  "    api_base: https://integrate.api.nvidia.com/v1",
+  "    api_key: os.environ/NVIDIA_API_KEY",
+  "- model_name: ds-qwen3.5-27b",
+  "  litellm_params:",
+  "    model: openai/model-z",
+  "    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "    api_key: os.environ/DASHSCOPE_API_KEY",
+  "- model_name: ds-qwen3.5-35b",
+  "  litellm_params:",
+  "    model: openai/model-y",
+  "    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "    api_key: os.environ/DASHSCOPE_API_KEY",
+  "router_settings:",
+  "  model_group_alias:",
+  "    coding-fallback: code-2-nvidia",
+  "    dashscope-coding-fallback: ds-qwen3.5-27b",
+  "    qwen-quota-fallback: ds-qwen3.5-27b",
+  "  fallbacks:",
+  "  - coding-fallback:",
+  "    - code-1-explabs",
+  "    - code-3-dashscope",
+  "    - code-4-unknown",
+  "  - dashscope-coding-fallback:",
+  "    - ds-qwen3.5-27b",
+  "    - ds-qwen3.5-35b",
+  "  - qwen-quota-fallback:",
+  "    - ds-qwen3.5-27b",
+  "    - ds-qwen3.5-35b",
+  "  num_retries: 2",
+  "  timeout: 120",
+  "  allowed_fails: 3",
+  "  cooldown_time: 60",
   "general_settings:",
   "  store_model_in_db: false",
   "",
@@ -198,27 +253,18 @@ test("an order change is reported against the whole chain, not its tail", () => 
   assert.deepEqual(second.reordered, [], "a settled config reports no order change");
 });
 
-test("leaves everything outside the two generated blocks untouched", async (t) => {
-  let text: string;
-  try {
-    text = await readFile(LIVE_CONFIG, "utf8");
-  } catch {
-    t.skip(`${LIVE_CONFIG} not present`);
-    return;
-  }
-
-  const outcome = composeCodingFallback(text, EMPTY_SCORES);
-  assert.equal(outcome.ok, true, outcome.ok ? "" : outcome.reason);
-  if (!outcome.ok) return;
-
+/** Invariants that hold for any config: the rewrite changes only the generated blocks. */
+function assertOnlyGeneratedBlocksChanged(text: string, rewritten: string): void {
   const before = text.split(/\r?\n/);
-  const after = outcome.text.split(/\r?\n/);
+  const after = rewritten.split(/\r?\n/);
   const prefix = before.indexOf("router_settings:");
   assert.notEqual(prefix, -1);
   assert.deepEqual(after.slice(0, prefix), before.slice(0, prefix), "model_list and header must not move");
 
   const tailMarker = "  num_retries:";
-  const beforeTail = before.slice(before.findIndex((line) => line.startsWith(tailMarker)));
+  const tailStart = before.findIndex((line) => line.startsWith(tailMarker));
+  assert.notEqual(tailStart, -1, "fixture must have keys after fallbacks");
+  const beforeTail = before.slice(tailStart);
   const afterTail = after.slice(after.findIndex((line) => line.startsWith(tailMarker)));
   assert.deepEqual(afterTail, beforeTail, "router_settings keys after fallbacks must not move");
 
@@ -227,6 +273,14 @@ test("leaves everything outside the two generated blocks untouched", async (t) =
     ["router_settings:"],
     "the router_settings header itself is preserved",
   );
+}
+
+test("leaves everything outside the two generated blocks untouched", () => {
+  const outcome = composeCodingFallback(REALISTIC, FIXTURE_SCORES);
+  assert.equal(outcome.ok, true, outcome.ok ? "" : outcome.reason);
+  if (!outcome.ok) return;
+
+  assertOnlyGeneratedBlocksChanged(REALISTIC, outcome.text);
 });
 
 /** Drop one `- model_name:` block, so a fixture can be built with a chain emptied. */
@@ -293,4 +347,16 @@ test("declares one spec per chain", () => {
   assert.equal(CHAINS.length, 2);
   assert.deepEqual(DASH_SCOPE_CHAIN.aliases, ["dashscope-coding-fallback", "qwen-quota-fallback"]);
   assert.deepEqual(CODING_CHAIN.aliases, ["coding-fallback"]);
+});
+
+
+test("chain host classification normalizes URL hosts and leaves invalid sources unclassified", () => {
+  const entries = readModelEntries([
+    "model_list:", "- model_name: code-1-a", "  litellm_params:",
+    "    model: openai/model-x", "    api_base: HTTPS://INTEGRATE.API.NVIDIA.COM:8443/v1",
+    "- model_name: code-2-b", "  litellm_params:",
+    "    model: openai/model-y", "    api_base: broken",
+  ]);
+  assert.deepEqual(entries.map((entry) => entry.host), ["integrate.api.nvidia.com", ""]);
+  assert.deepEqual(entries.map((entry) => tierForHost(entry.host)), [1, 99]);
 });

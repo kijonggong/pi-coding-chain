@@ -36,6 +36,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { parseProviderUrl } from "./providers.ts";
 import { canonicalModelKey } from "./scores.ts";
 
 /** A host this module knows how to probe and how to wire into `model_list`. */
@@ -49,6 +50,11 @@ export interface FreeProbeTarget {
   readonly apiKeyEnv: string;
 }
 
+export const EXPLABS_BASE_URL = "https://api.experientiallabs.ai/v1";
+
+const explabsUrl = parseProviderUrl(EXPLABS_BASE_URL);
+if (!explabsUrl) throw new Error(`Invalid EXPLABS_BASE_URL: ${EXPLABS_BASE_URL}`);
+
 /**
  * Upstreams whose listing is read for zero-priced models. One entry today; the
  * shape is a list because the probe is the same for any OpenAI-compatible
@@ -57,8 +63,8 @@ export interface FreeProbeTarget {
  */
 export const FREE_PROBE_TARGETS: readonly FreeProbeTarget[] = [
   {
-    host: "api.experientiallabs.ai",
-    baseUrl: "https://api.experientiallabs.ai/v1",
+    host: explabsUrl.hostname,
+    baseUrl: EXPLABS_BASE_URL,
     slug: "explabs",
     apiKeyEnv: "EXPLABS_API_KEY",
   },
@@ -318,16 +324,20 @@ export function parseFreeSnapshot(text: string): FreeSnapshot | undefined {
 }
 
 /**
- * Read a snapshot. `undefined` — not an empty snapshot — means no snapshot was
- * usable, which is the signal to leave `model_list` exactly as found rather than
- * pruning groups because a file went missing.
+ * Read a snapshot. Only a missing file yields `undefined`; other failures carry
+ * the path and reason so callers can preserve `model_list` and explain why.
  */
 export async function loadFreeSnapshot(path: string): Promise<FreeSnapshot | undefined> {
+  let text: string;
   try {
-    return parseFreeSnapshot(await readFile(path, "utf8"));
-  } catch {
-    return undefined;
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new Error(`cannot read free snapshot ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+  const snapshot = parseFreeSnapshot(text);
+  if (!snapshot) throw new Error(`invalid free snapshot ${path}: malformed JSON or unusable snapshot`);
+  return snapshot;
 }
 
 /**

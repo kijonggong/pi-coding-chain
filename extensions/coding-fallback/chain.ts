@@ -46,6 +46,7 @@
  * other byte of the config is preserved, and the rewrite is idempotent.
  */
 
+import { parseProviderUrl } from "./providers.ts";
 import {
   coveredHosts,
   excludedByReason,
@@ -134,14 +135,6 @@ export const DASH_SCOPE_CHAIN: ChainSpec = {
 
 export const CHAINS: readonly ChainSpec[] = [CODING_CHAIN, DASH_SCOPE_CHAIN];
 
-function hostOf(base: string): string {
-  try {
-    return new URL(base).hostname;
-  } catch {
-    return "";
-  }
-}
-
 interface BlockRange {
   readonly start: number;
   readonly end: number;
@@ -177,7 +170,7 @@ export function readModelEntries(lines: readonly string[]): ModelEntry[] {
     entries.push({
       name: current.name,
       upstream: upstream === "" ? current.name : upstream,
-      host: hostOf(current.base),
+      host: parseProviderUrl(current.base)?.hostname ?? "",
     });
     current = undefined;
   };
@@ -355,7 +348,7 @@ function scanModelList(
       start: open.start,
       end: stop,
       name: open.name,
-      host: hostOf(open.base),
+      host: parseProviderUrl(open.base)?.hostname ?? "",
       upstream: open.model.split("/").pop() ?? open.model,
       baseUrl: open.base,
       apiKey: open.key,

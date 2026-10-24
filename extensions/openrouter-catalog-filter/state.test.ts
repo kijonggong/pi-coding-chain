@@ -50,7 +50,12 @@ test("distinguishes off from no opinion when the file is unreadable", () => {
   assert.match(parseState("{ not json").notes[0], /not valid JSON/);
   assert.equal(parseState("[]").enabled, undefined);
   assert.equal(parseState('{"enabled": 1}').enabled, undefined);
-  assert.match(parseState('{"enabled": 1}').notes[0], /expected true or false/);
+  // The note names every word the switch accepts, and that a JSON boolean is
+  // also a file value.
+  assert.equal(
+    parseState('{"enabled": 1}').notes[0],
+    'ignored "enabled": expected a JSON boolean or one of on, true, yes, 1, enable, enabled, off, false, no, 0, disable, disabled, got 1',
+  );
 });
 
 test("the environment wins over the file, and a bad value is reported", () => {
@@ -69,7 +74,9 @@ test("the environment wins over the file, and a bad value is reported", () => {
   assert.deepEqual(resolveState({ file: off, env: { [STATE_ENV]: "sometimes" } }), {
     enabled: false,
     source: "file",
-    notes: [`ignored ${STATE_ENV}: expected on or off, got "sometimes"`],
+    notes: [
+      'ignored PI_OPENROUTER_FILTER: expected one of on, true, yes, 1, enable, enabled, off, false, no, 0, disable, disabled, got "sometimes"',
+    ],
   });
   // A blank variable is not an override.
   assert.deepEqual(resolveState({ file: off, env: { [STATE_ENV]: "  " } }).source, "file");
@@ -127,6 +134,26 @@ test("saves and loads through the real file, leaving no temporary behind", async
     // A hand-written file this module did not produce is read, not rejected.
     await writeFile(path, '{"enabled": "off"}\n', "utf8");
     assert.equal((await loadState(path, {})).enabled, false);
+
+    // A read error other than ENOENT (e.g. attempting to read a directory) is
+    // recorded as a note and leaves the default in force.
+    const unreadable = await loadState(dir, {});
+    assert.equal(unreadable.enabled, true);
+    assert.equal(unreadable.source, "default");
+    assert.equal(unreadable.notes.length, 1);
+    assert.match(
+      unreadable.notes[0],
+      /^the state file could not be read: .*; its setting was ignored$/,
+    );
+
+    // An unreadable file does not prevent environment override, and the note is preserved.
+    const unreadableWithEnv = await loadState(dir, { [STATE_ENV]: "off" });
+    assert.equal(unreadableWithEnv.enabled, false);
+    assert.equal(unreadableWithEnv.source, "env");
+    assert.match(
+      unreadableWithEnv.notes[0],
+      /^the state file could not be read: .*; its setting was ignored$/,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

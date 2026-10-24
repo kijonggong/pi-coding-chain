@@ -55,15 +55,23 @@ provider.
 
 ## What it registers
 
-`dashscope` — 29 chat models, text-in, quota-covered (cost reported as zero,
-matching the rest of this configuration). The endpoint also resells third-party
-models, which is why one provider carries Qwen, Kimi, and GLM ids.
+`dashscope` — 7 chat models, quota-covered (cost reported as zero, matching the
+rest of this configuration). The list is kept to the models worth using for
+coding: four Qwen3.7 Max snapshots, DeepSeek V4.1 Flash (text and image), GLM-5.1,
+and Qwen3.8 Omni Flash Realtime, which is listed for the catalog only because it
+needs the Realtime API that Pi's `openai-completions` transport cannot call. The
+endpoint also resells third-party models, which is why one provider carries
+Qwen, DeepSeek, and GLM ids.
 
-`explabs` — 4 chat models. Unlike the other upstreams, ExpLabs publishes
+`explabs` — 5 chat models. Unlike the other upstreams, ExpLabs publishes
 per-token pricing rather than a metered allowance, so these entries carry the
 endpoint's real rates ($0.30/1.20 per Mtok uncached for DeepSeek V4.1 Flash and
 its uncensored variant, $0.15/0.47 for Qwen3.8 Flash-Next Uncensored,
-$1.24/4.24 for Muse Spark Open) instead of zero.
+$1.40/4.40 for GLM-5.3 Uncensored, $1.24/4.24 for Muse Spark Open) instead of
+zero. Its base URL is `EXPLABS_BASE_URL` from `coding-fallback/free-models.ts`,
+the same address the free-model probe reads, so the registered endpoint and the
+probed one cannot drift apart. The dependency runs one way: quota-providers
+imports from coding-fallback, never the reverse.
 
 Muse Spark Open is the one model on this host that answers while the account has
 no platform credits — every priced model returns `insufficient_credits` and this
@@ -117,6 +125,6 @@ config sends to these two hosts is either registered or explicitly excluded.
 
 ## Verify
 
-`pi --list-models` should show `dashscope` (29 models) and `explabs` (2), and
+`pi --list-models` should show `dashscope` (7 models) and `explabs` (5), and
 `pi --list-models aaii` should still show `aaii/fallback`. Then run
 `/aaii-router` and confirm the candidate list reaches tier 3 and tier 4 hosts.

@@ -30,9 +30,7 @@
  */
 
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { aliasMapsFromSnapshot } from "./scores.ts";
+import { aliasMapsFromSnapshot, resolveScoresPath } from "./scores.ts";
 
 const DATASET = "evaleval/EEE_datastore";
 const PREFIX = "data/artificial-analysis-llms";
@@ -129,7 +127,10 @@ async function resolve(target) {
     const sample = [...files].sort().slice(0, SAMPLE);
     const records = [];
     for (const file of sample) {
-      const record = await readRecord(file).catch(() => null);
+      const record = await readRecord(file).catch((error) => {
+        console.error(`skipping index record ${file}: ${error.message}`);
+        return null;
+      });
       if (record) records.push(record);
     }
     if (records.length === 0) continue;
@@ -152,7 +153,22 @@ async function main() {
   const argv = process.argv.slice(2);
   const dry = argv.includes("--dry");
   const outIndex = argv.indexOf("--out");
-  const outPath = outIndex >= 0 ? argv[outIndex + 1] : join(dirname(fileURLToPath(import.meta.url)), "aaii-scores.json");
+  const outPath = outIndex >= 0 ? argv[outIndex + 1] : resolveScoresPath();
+
+  // Read operator-owned aliases before any fetch or write.
+  let aliases = {};
+  let aliasNotes = {};
+  try {
+    let previousText;
+    try {
+      previousText = await readFile(outPath, "utf8");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (previousText !== undefined) ({ aliases, aliasNotes } = aliasMapsFromSnapshot(previousText));
+  } catch (error) {
+    throw new Error(`cannot preserve aliases from ${outPath}: ${error.message}`, { cause: error });
+  }
 
   const scores = {};
   let resolved = 0;
@@ -178,11 +194,6 @@ async function main() {
     console.log(`  ${target.key.padEnd(34)} ${shown}`);
   }
 
-  // `scores` is regenerated from the index, but `aliases` is the one part of this
-  // file an operator writes by hand. Starting it from `{}` would silently erase a
-  // model's only route to a rank, so the previous map is carried forward.
-  const previousText = await readFile(outPath, "utf8").catch(() => "");
-  const { aliases, aliasNotes } = aliasMapsFromSnapshot(previousText);
   if (Object.keys(aliases).length > 0) {
     console.log(`carrying forward ${Object.keys(aliases).length} alias(es) from ${outPath}`);
   }
