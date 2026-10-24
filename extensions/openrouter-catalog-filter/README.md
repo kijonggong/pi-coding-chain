@@ -54,6 +54,16 @@ If the remote request fails, the extension falls back to `models-store.json`,
 then to the bundled catalog, with the allowlist applied. `PI_OFFLINE=1` skips the
 network request.
 
+When a fallback is used, the status and on/off outputs report which earlier
+sources were skipped and why, immediately after the active source name:
+- `(store; remote skipped: <reason>)`
+- `(builtin; remote skipped: <reason>; store skipped: <reason>)`
+
+`models-store.json` specifically distinguishes whether `the file was missing`,
+could not be read (the path and the error are reported, e.g. `EISDIR` for a
+directory), `the JSON was broken`, or `there were no allowed models`. The `/openrouter-catalog-filter list`
+command continues to output strictly model IDs without headers or commentary.
+
 ## Turning the allowlist off
 
 The allowlist replaces the provider's whole catalog, so the switch is
@@ -74,13 +84,14 @@ agent directory is touched.
 The argument is completed in the prompt, so the subcommands are discoverable.
 The choice is kept in `openrouter-catalog-filter.json` under the agent directory
 (`PI_OPENROUTER_FILTER_STATE` points the file elsewhere) and written atomically,
-and `PI_OPENROUTER_FILTER=on|off` overrides it for one process without a UI.
+and `PI_OPENROUTER_FILTER=on|off` (accepts `on`, `true`, `yes`, `1`, `enable`, `enabled` / `off`, `false`, `no`, `0`, `disable`, `disabled`) overrides it for one process without a UI.
 
 **The default is `on`.** The extension was already narrowing the catalog before
 it had a switch, so upgrading must not widen anyone's model list as a side
 effect of the new state file not existing yet.
 
-A value that could not be used is reported, never guessed: a broken state file
+A value that could not be used is reported, never guessed: a broken state file,
+an unreadable file (distinguished from a missing file, which leaves no note),
 or a mistyped variable leaves the default in force and says so in the status
 output, and a value the environment is holding is marked as such when the
 command writes over it.

@@ -148,6 +148,9 @@ export class ModelPicker implements Component {
     if (chosen.length === 0) return;
 
     const byId = new Map(this.options.candidates.map((candidate) => [candidate.id, candidate]));
-    this.done(chosen.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])));
+    this.done(chosen.flatMap((id) => {
+      const candidate = byId.get(id);
+      return candidate === undefined ? [] : [candidate];
+    }));
   }
 }

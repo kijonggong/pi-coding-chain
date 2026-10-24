@@ -37,6 +37,10 @@ export const DEFAULT_ENABLED = true;
 const ON = new Set(["on", "true", "yes", "1", "enable", "enabled"]);
 const OFF = new Set(["off", "false", "no", "0", "disable", "disabled"]);
 
+/** The words `parseSwitch` takes, listed in the notes a mistyped value gets, so
+ * the note names what would have worked instead of a paraphrase of one spelling. */
+const SWITCH_WORDS = [...ON, ...OFF].join(", ");
+
 /** `on`/`off`, in the spellings a shell, a file or a person would use. */
 export function parseSwitch(text: string): boolean | undefined {
   const trimmed = text.trim().toLowerCase();
@@ -87,7 +91,7 @@ export function parseState(text: string): { readonly enabled?: boolean; readonly
   if (typeof value === "boolean") return { enabled: value, notes: [] };
   const parsed = typeof value === "string" ? parseSwitch(value) : undefined;
   if (parsed === undefined) {
-    return { notes: [`ignored "enabled": expected true or false, got ${JSON.stringify(value)}`] };
+    return { notes: [`ignored "enabled": expected a JSON boolean or one of ${SWITCH_WORDS}, got ${JSON.stringify(value)}`] };
   }
   return { enabled: parsed, notes: [] };
 }
@@ -112,7 +116,7 @@ export function resolveState(sources: StateSources = {}): ResolvedState {
   if (raw !== undefined && raw.trim() !== "") {
     const parsed = parseSwitch(raw);
     if (parsed === undefined) {
-      notes.push(`ignored ${STATE_ENV}: expected on or off, got ${JSON.stringify(raw)}`);
+      notes.push(`ignored ${STATE_ENV}: expected one of ${SWITCH_WORDS}, got ${JSON.stringify(raw)}`);
     } else {
       enabled = parsed;
       source = "env";
@@ -168,6 +172,24 @@ export async function loadState(
   path: string,
   env: Record<string, string | undefined> = {},
 ): Promise<ResolvedState> {
-  const file = await readFile(path, "utf8").catch(() => undefined);
-  return resolveState({ file, env });
+  let file: string | undefined;
+  let readNote: string | undefined;
+  try {
+    file = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      file = undefined;
+    } else {
+      const reason = error instanceof Error ? error.message : String(error);
+      readNote = `the state file could not be read: ${reason}; its setting was ignored`;
+    }
+  }
+  const resolved = resolveState({ file, env });
+  if (readNote !== undefined) {
+    return {
+      ...resolved,
+      notes: [readNote, ...resolved.notes],
+    };
+  }
+  return resolved;
 }

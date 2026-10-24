@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_COOLDOWN_MS,
+  chooseTurnCandidate,
   classifyFailure,
   coolingFor,
   coolingLabels,
@@ -170,4 +171,33 @@ test("pairs each candidate with the window it is under", () => {
   assert.equal(paired[1].cooling?.reason, "manual");
   // The candidate the report prints is the whole one, not a copy.
   assert.equal(paired[2].candidate.index, 2);
+});
+
+test("chooseTurnCandidate respects valid session epoch, falls back when epoch changed or candidate is cooling", () => {
+  // 1. Fresh turn with no state picks preferred (head).
+  assert.equal(chooseTurnCandidate(ORDER, undefined, undefined, 0, NOW).label, "a/alpha");
+
+  // 2. Remembered candidate with matching epoch is retained when not cooling.
+  assert.equal(chooseTurnCandidate(ORDER, undefined, { label: "c/gamma", epoch: 1 }, 1, NOW).label, "c/gamma");
+
+  // 3. Legacy session state with undefined epoch is treated as valid.
+  assert.equal(chooseTurnCandidate(ORDER, undefined, { label: "c/gamma" }, 2, NOW).label, "c/gamma");
+
+  // 4. Mismatched epoch treats remembered candidate as invalid and picks preferred (head).
+  assert.equal(chooseTurnCandidate(ORDER, undefined, { label: "c/gamma", epoch: 1 }, 2, NOW).label, "a/alpha");
+
+  // 5. Remembered candidate under cooldown falls back to preferred non-cooling candidate.
+  const coolingGamma = rememberFailure(undefined, "c/gamma", "rate-limit", NOW, 60_000);
+  assert.equal(chooseTurnCandidate(ORDER, coolingGamma, { label: "c/gamma", epoch: 1 }, 1, NOW).label, "a/alpha");
+
+  // 6. When remembered candidate is cooling and head is also cooling, picks next non-cooling.
+  const coolingAlphaAndGamma = rememberFailure(coolingGamma, "a/alpha", "rate-limit", NOW, 60_000);
+  assert.equal(chooseTurnCandidate(ORDER, coolingAlphaAndGamma, { label: "c/gamma", epoch: 1 }, 1, NOW).label, "b/beta");
+
+  // 7. When all candidates are cooling, falls back to head.
+  let allCooling: CooldownMap | undefined = coolingAlphaAndGamma;
+  for (const item of ORDER) {
+    allCooling = rememberFailure(allCooling, item.label, "rate-limit", NOW, 60_000);
+  }
+  assert.equal(chooseTurnCandidate(ORDER, allCooling, { label: "c/gamma", epoch: 1 }, 1, NOW).label, "a/alpha");
 });

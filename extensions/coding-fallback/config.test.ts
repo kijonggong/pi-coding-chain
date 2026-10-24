@@ -363,3 +363,20 @@ test("reports a host that has no quota tier", async () => {
     await cleanup(temp.dir);
   }
 });
+
+
+test("check and sync refuse corrupt or unreadable scores without backup or write", async () => {
+  const temp = await makeTemp(CONFIG, "{broken");
+  try {
+    for (const path of [temp.scores, temp.dir]) {
+      for (const operation of [checkFallback, syncFallback]) {
+        const result = await operation(temp.config, path);
+        assert.equal(result.state, "error");
+        assert.ok(result.message.includes(path));
+        assert.match(result.message, /invalid scores|cannot read scores/);
+      }
+    }
+    assert.equal(await readFile(temp.config, "utf8"), CONFIG);
+    assert.deepEqual((await readdir(temp.dir)).sort(), ["aaii-scores.json", "litellm_config.yaml"]);
+  } finally { await cleanup(temp.dir); }
+});

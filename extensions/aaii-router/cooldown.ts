@@ -136,6 +136,37 @@ export function preferred<T extends { label: string }>(
   return available(ordered, cooldowns, now)[0] ?? ordered[0];
 }
 
+export interface TurnState {
+  readonly label?: string;
+  readonly epoch?: number;
+}
+
+/**
+ * Select the candidate for a new user turn.
+ * When the session's recorded epoch differs from the current chainEpoch, the
+ * session's remembered label is treated as invalid so the newly configured head
+ * is chosen immediately. Old states lacking an epoch continue to be treated as valid.
+ */
+export function chooseTurnCandidate<T extends { label: string }>(
+  ordered: readonly T[],
+  cooldowns: CooldownMap | undefined,
+  state: TurnState | undefined,
+  currentEpoch: number,
+  now: number,
+): T {
+  const head = ordered[0];
+  const stateEpoch = state?.epoch;
+  const epochValid = stateEpoch === undefined || stateEpoch === currentEpoch;
+  const remembered = epochValid
+    ? ordered.find((candidate) => candidate.label === state?.label)
+    : undefined;
+  return (
+    (remembered && coolingFor(cooldowns, remembered.label, now) === undefined
+      ? remembered
+      : (preferred(ordered, cooldowns, now) ?? head))
+  );
+}
+
 /**
  * The candidate to use after `from` failed: the first later one that is not
  * cooling. When every later candidate is cooling the next one in policy order

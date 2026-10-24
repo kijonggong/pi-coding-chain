@@ -26,6 +26,9 @@
  * are deliberately *lower* than the published page: see `MAX_OUTPUT_CAVEAT`.
  */
 
+import { EXPLABS_BASE_URL } from "../coding-fallback/free-models.ts";
+import { parseProviderUrl } from "../coding-fallback/providers.ts";
+
 /** Cost metadata shape Pi expects. */
 export interface ModelCost {
   readonly input: number;
@@ -106,49 +109,22 @@ export const DASHSCOPE: ProviderSpec = {
   apiKeyEnv: "DASHSCOPE_API_KEY",
   api: "openai-completions",
   models: [
-    // Qwen3.5 dense and open-weight: 262K in, 64K out.
-    dashscope("qwen3.5-27b", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-5-27b")),
-    dashscope("qwen3.5-35b-a3b", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-5-35b-a3b")),
-    dashscope("qwen3.5-122b-a10b", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-5-122b-a10b")),
-    dashscope("qwen3.5-397b-a17b", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-5-397b-a17b")),
-
-    // Qwen3.5 Flash and Plus: 1M in, 64K out. Each dated snapshot is published
-    // with the same limits as its base model.
-    dashscope("qwen3.5-flash", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-5-flash")),
-    dashscope("qwen3.5-flash-2026-02-23", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-5-flash")),
-    dashscope("qwen3.5-plus", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-5-plus")),
-    dashscope("qwen3.5-plus-2026-02-15", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-5-plus")),
-    dashscope("qwen3.5-plus-2026-04-20", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-5-plus")),
-
-    // Omni Plus keeps the smaller window despite the name.
-    dashscope("qwen3.5-omni-plus", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-5-omni-plus")),
-
-    // Qwen3.6: 1M in, 64K out, except the 27B which stays on 262K.
-    dashscope("qwen3.6-flash", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-6-flash")),
-    dashscope("qwen3.6-flash-2026-04-16", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-6-flash")),
-    dashscope("qwen3.6-plus", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-6-plus")),
-    dashscope("qwen3.6-plus-2026-04-02", QWEN35_LARGE, OUTPUT_SMALL, alibaba("qwen3-6-plus")),
-    dashscope("qwen3.6-27b", QWEN35_DENSE, OUTPUT_SMALL, alibaba("qwen3-6-27b")),
-
-    // Qwen3.7: every variant moves to a 128K output cap.
-    dashscope("qwen3.7-flash", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-flash")),
-    dashscope("qwen3.7-flash-2026-07-15", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-flash")),
-    dashscope("qwen3.7-plus-2026-05-26", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-plus")),
-    dashscope("qwen3.7-max", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
-    dashscope("qwen3.7-max-preview", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
     dashscope("qwen3.7-max-2026-05-17", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
-    dashscope("qwen3.7-max-2026-05-20", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
     dashscope("qwen3.7-max-2026-06-08", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
-
-    // Qwen3.8 Max and its September snapshot: 1M in, 128K out.
-    dashscope("qwen3.8-max", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-8-max")),
-    dashscope("qwen3.8-max-0902", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-8-max")),
-
-    // Resold third-party models. The two Kimi entries take the smaller output
-    // cap rather than Alibaba's context-sized figure; see MAX_OUTPUT_CAVEAT.
-    dashscope("kimi-k3", 1048576, OUTPUT_LARGE, `${alibaba("kimi-k3-by-moonshot")} (${MAX_OUTPUT_CAVEAT})`),
-    dashscope("kimi-k2.7-code", 262144, OUTPUT_SMALL, `${alibaba("kimi-k2-7-code-by-moonshot")} (${MAX_OUTPUT_CAVEAT})`),
-    dashscope("glm-5.2", 1048576, OUTPUT_LARGE, alibaba("glm-5-2-by-zhipu")),
+    dashscope("qwen3.7-max-preview", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
+    dashscope("qwen3.7-max-2026-05-20", QWEN35_LARGE, OUTPUT_LARGE, alibaba("qwen3-7-max")),
+    {
+      ...dashscope("deepseek-v4.1-flash-1017", 1048576, 393216, alibaba("deepseek-v4-1-flash")),
+      input: ["text", "image"],
+    },
+    {
+      // Catalog entry only: this model needs Realtime WebSocket/WebRTC/AOQ.
+      // Pi's current openai-completions transport cannot invoke it.
+      ...dashscope("qwen3.8-omni-flash-realtime", 196608, 65536, alibaba("qwen3-8-omni-flash-realtime")),
+      name: "Qwen3.8 Omni Flash Realtime (DashScope; Realtime API required)",
+      input: ["text", "image"],
+      reasoning: false,
+    },
     dashscope("glm-5.1", 204800, OUTPUT_LARGE, alibaba("glm-5-1-by-zhipu")),
   ],
 };
@@ -161,10 +137,20 @@ export const DASHSCOPE: ProviderSpec = {
 export const EXPLABS: ProviderSpec = {
   id: "explabs",
   name: "ExpLabs (Experiential Labs)",
-  baseUrl: "https://api.experientiallabs.ai/v1",
+  baseUrl: EXPLABS_BASE_URL,
   apiKeyEnv: "EXPLABS_API_KEY",
   api: "openai-completions",
   models: [
+    {
+      id: "glm-5.3-uncensored",
+      name: "GLM-5.3 Uncensored (ExpLabs)",
+      input: ["text"],
+      cost: { input: 1.4, output: 4.4, cacheRead: 0.26, cacheWrite: 0 },
+      contextWindow: 1048576,
+      maxTokens: 131072,
+      reasoning: true,
+      source: "endpoint",
+    },
     {
       id: "deepseek-v4.1-flash",
       name: "DeepSeek V4.1 Flash (ExpLabs)",
@@ -190,6 +176,9 @@ export const EXPLABS: ProviderSpec = {
 
 export const PROVIDERS: readonly ProviderSpec[] = [DASHSCOPE, EXPLABS];
 
+const dashscopeUrl = parseProviderUrl(DASHSCOPE.baseUrl);
+if (!dashscopeUrl) throw new Error(`Invalid DASHSCOPE.baseUrl: ${DASHSCOPE.baseUrl}`);
+
 /**
  * Groups the LiteLLM config targets that this package deliberately does not
  * register, with the reason. Kept explicit so a later reader does not assume
@@ -198,7 +187,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [DASHSCOPE, EXPLABS];
 export const EXCLUDED_MODELS: readonly { readonly id: string; readonly host: string; readonly reason: string }[] = [
   {
     id: "qwen3.6-max-preview",
-    host: "dashscope-intl.aliyuncs.com",
+    host: dashscopeUrl.hostname,
     reason:
       "the LiteLLM config routes code-... to it, but DashScope answers a chat request with " +
       '"Model not exist." (model_not_found) and its /models listing omits the id',

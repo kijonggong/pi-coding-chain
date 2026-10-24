@@ -133,6 +133,14 @@ and always refreshed immediately before a `sync`, because that is the moment the
 decision is made. Set `PI_CODING_FALLBACK_FREE_REFRESH=off` to stop the extension
 reading the network at all.
 
+무료 스냅샷은 파일이 없을 때(ENOENT)만 없는 것으로 처리합니다. 권한·디렉터리 등 읽기 오류와
+깨진 JSON은 경로와 이유를 보고하며, check/sync/add는 그 이유를 notice에 넣고 기존
+`model_list`를 보존합니다. refresh는 이전 스냅샷 읽기 실패를
+`could not read previous snapshot <path>: <reason>`으로 결과 메시지에 붙입니다.
+원격 조회와 기존 임시 파일 쓰기·rename 절차는 계속 수행하며, dry run과 쓰기 실패에도
+읽기 실패 이유를 함께 보고합니다. native quota catalog의 DashScope 제외 목록 host는
+`DASHSCOPE.baseUrl`에서 계산해 주소 변경을 따릅니다.
+
 ## Scores
 
 The index is published by [Artificial Analysis](https://artificialanalysis.ai) and
@@ -432,3 +440,7 @@ the generated block sits where it claims to.
   ordering is by score — so adding a group never renames an existing one. Two
   entries can therefore read `code-7-…` and `code-8-…` while ranking 9th and 3rd;
   `model_group_alias` and `fallbacks` are the answer to what the order is.
+
+점수 파일과 경로: `scores.ts`가 모듈 상대 기본 경로와 `PI_CODING_FALLBACK_SCORES` 해석을 소유합니다. 파일이 없을 때(ENOENT)만 빈 점수표를 사용하며, 읽기 오류나 깨진 점수 파일은 경로와 이유를 보고합니다. check/sync/add는 이 오류가 있으면 백업이나 설정 쓰기를 하지 않고 거부하고, 모델 점수 조회도 실패를 전파합니다. fetch-scores는 기존 파일이 없을 때만 빈 별칭으로 시작하며, 읽기·JSON 오류 시 기존 파일을 보존하고 중단합니다. 건너뛴 원격 색인 레코드는 파일과 이유를 stderr에 기록합니다.
+
+`providers.ts`는 URL의 hostname과 origin 정규화를 소유하며 잘못된 URL은 undefined로 반환합니다. 체인은 이를 미분류로, 라우터는 출처 없음으로 처리합니다. ExpLabs의 기본 API 주소는 무료 모델 probe 정의에서 소유하며 native quota catalog도 같은 값을 사용합니다.

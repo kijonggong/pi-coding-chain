@@ -115,13 +115,15 @@ function describeError(error: unknown): string {
 }
 
 function noticesFor(composed: Composed): string[] {
-  return noticeFor(
+  const notices = noticeFor(
     composed.chains,
     composed.unclassifiedHosts,
     composed.reordered,
     composed.free,
     composed.freeRetrieved,
   );
+  if (composed.freeReadError) notices.push(composed.freeReadError);
+  return notices;
 }
 
 /** Staleness of the free-model snapshot, as a notice, or `null` when it is current. */
@@ -137,6 +139,7 @@ function freeStalenessNotice(composed: Composed): string | null {
 }
 
 interface Composed {
+  readonly freeReadError?: string;
   readonly text: string;
   readonly changed: boolean;
   readonly chains: readonly ChainSummary[];
@@ -150,6 +153,7 @@ interface Composed {
 
 /** The three inputs a compose needs, before anything is composed. */
 interface Inputs {
+  readonly freeReadError?: string;
   readonly text: string;
   readonly scores: ScoreSnapshot;
   readonly free: FreeSnapshot | undefined;
@@ -167,8 +171,18 @@ async function readInputs(
     return { error: `cannot read ${configPath} (${describeError(error)})` };
   }
 
-  const scores = await loadScores(scoresPath);
-  const free = freePath ? await loadFreeSnapshot(freePath) : undefined;
+  let scores: ScoreSnapshot;
+  try {
+    scores = await loadScores(scoresPath);
+  } catch (error) {
+    return { error: describeError(error) };
+  }
+  let free: FreeSnapshot | undefined;
+  try {
+    free = freePath ? await loadFreeSnapshot(freePath) : undefined;
+  } catch (error) {
+    return { text, scores, free: undefined, freeReadError: describeError(error) };
+  }
   return { text, scores, free };
 }
 
@@ -196,6 +210,7 @@ function composeText(
     free: outcome.free,
     freeRetrieved: inputs.free?.retrieved ?? null,
     freePath: freePath ?? "(none)",
+    freeReadError: inputs.freeReadError,
   };
 }
 

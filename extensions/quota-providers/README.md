@@ -62,7 +62,11 @@ models, which is why one provider carries Qwen, Kimi, and GLM ids.
 `explabs` — 2 chat models. Unlike the other upstreams, ExpLabs publishes
 per-token pricing rather than a metered allowance, so these entries carry the
 endpoint's real rates ($0.30/1.20 per Mtok uncached for DeepSeek V4.1 Flash,
-$0.15/0.47 for Qwen3.8 Flash-Next Uncensored) instead of zero.
+$0.15/0.47 for Qwen3.8 Flash-Next Uncensored) instead of zero. Its base URL is
+`EXPLABS_BASE_URL` from `coding-fallback/free-models.ts`, the same address the
+free-model probe reads, so the registered endpoint and the probed one cannot
+drift apart. The dependency runs one way: quota-providers imports from
+coding-fallback, never the reverse.
 
 ## Where the limits come from
 

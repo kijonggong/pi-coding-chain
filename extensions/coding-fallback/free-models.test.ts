@@ -9,11 +9,14 @@
  * is the *shape* of the decision — a present price of zero on both meters is free,
  * a missing price is not — plus what the chain does with a free model.
  *
- * One test does read the live config, in the same read-only way `chain.test.ts`
- * does, to check that the generated block is well formed against a real file.
+ * The generated-group check runs against a fixture in this file, which stands
+ * in for the live config: that file is machine-specific and can be mid-edit.
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
+import { loadFreeSnapshot } from "./free-models.ts";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -394,16 +397,105 @@ test("reconcileFreeEntries is a no-op without a snapshot", () => {
   assert.equal(result.report.snapshotMissing, true);
 });
 
-test("the live config accepts a generated group without disturbing its own entries", async () => {
-  const live = await readFile(join(process.env.HOME ?? "", ".pi", "agent", "litellm_config.yaml"), "utf8").catch(() => "");
-  if (live === "") return; // no live config on this machine; nothing to check
+/**
+ * A config in the shape the live file has: suppliers across both chains, and
+ * `router_settings` with its two generated blocks followed by keys the generator
+ * must leave alone.
+ */
+const FULL_CONFIG = [
+  "model_list:",
+  "- model_name: code-2-cline-model-x",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: http://127.0.0.1:28180/v1",
+  "- model_name: code-5-nvidia-model-x",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: https://integrate.api.nvidia.com/v1",
+  "    api_key: os.environ/NVIDIA_API_KEY",
+  "- model_name: code-7-explabs-model-x",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: https://api.experientiallabs.ai/v1",
+  "    api_key: os.environ/EXPLABS_API_KEY",
+  "- model_name: code-20-cline-model-top",
+  "  litellm_params:",
+  "    model: openai/model-top",
+  "    api_base: http://127.0.0.1:28180/v1",
+  "- model_name: ds-qwen3.5-27b",
+  "  litellm_params:",
+  "    model: openai/model-x",
+  "    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "    api_key: os.environ/DASHSCOPE_API_KEY",
+  "- model_name: ds-qwen3-coder",
+  "  litellm_params:",
+  "    model: openai/model-top",
+  "    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+  "    api_key: os.environ/DASHSCOPE_API_KEY",
+  "router_settings:",
+  "  model_group_alias:",
+  "    coding-fallback: code-20-cline-model-top",
+  "    dashscope-coding-fallback: ds-qwen3-coder",
+  "  fallbacks:",
+  "  - code-20-cline-model-top:",
+  "    - code-7-explabs-model-x",
+  "    - code-2-cline-model-x",
+  "    - code-5-nvidia-model-x",
+  "  - ds-qwen3-coder:",
+  "    - ds-qwen3.5-27b",
+  "  request_timeout: 120",
+  "  num_retries: 2",
+  "  allowed_fails: 3",
+  "",
+].join("\n");
 
-  const outcome = compose(live, snapshotWith([{ id: "ling-3.1-flash" }]));
-  const liveNames = live.split(/\r?\n/).filter((line) => /^- model_name:/.test(line));
-  const composedNames = outcome.text.split(/\r?\n/).filter((line) => /^- model_name:/.test(line));
-  assert.deepEqual(composedNames, [...liveNames, "- model_name: code-free-explabs-ling-3.1-flash"]);
+/**
+ * Adding a group may change only the generated regions: the group appended at the
+ * tail of `model_list` and the two `router_settings` blocks. Every other byte of
+ * the file — each existing entry's `litellm_params` (`model`, `api_base`,
+ * `api_key`) and every router key after `fallbacks` (`request_timeout`,
+ * `num_retries`, `allowed_fails`) — has to come back as it went in. The stricter
+ * variant in `chain.test.ts` needs no allowance because that fixture adds no
+ * group.
+ */
+function assertGeneratedGroupAccepted(text: string) {
+  const outcome = compose(text, snapshotWith([{ id: "ling-3.1-flash" }]));
+  const before = text.split(/\r?\n/);
+  const after = outcome.text.split(/\r?\n/);
+
+  // Everything up to the router block is the header and the hand-written entries.
+  const routerAt = before.indexOf("router_settings:");
+  assert.notEqual(routerAt, -1, "fixture must have router_settings");
+  assert.deepEqual(after.slice(0, routerAt), before.slice(0, routerAt), "existing entries must not change");
+
+  // The only lines added before the router block belong to the one generated group.
+  const afterRouterAt = after.indexOf("router_settings:");
+  assert.notEqual(afterRouterAt, -1);
+  const added = after.slice(routerAt, afterRouterAt);
+  assert.deepEqual(
+    added.filter((line) => line.startsWith("- model_name:")),
+    ["- model_name: code-free-explabs-ling-3.1-flash"],
+    "exactly one entry is generated",
+  );
+  assert.equal(added[0], "- model_name: code-free-explabs-ling-3.1-flash", "the group leads the added lines");
+  assert.ok(
+    added.every((line) => line === added[0] || line.startsWith("  ")),
+    "the added lines are one entry, not stray text",
+  );
+
+  // The router keys the generator does not own keep their exact text and order.
+  const tailAt = before.findIndex((line) => line.startsWith("  request_timeout:"));
+  assert.notEqual(tailAt, -1, "fixture must have keys after the generated blocks");
+  const afterTailAt = after.findIndex((line) => line.startsWith("  request_timeout:"));
+  assert.notEqual(afterTailAt, -1, "the router tail must survive the rewrite");
+  assert.deepEqual(after.slice(afterTailAt), before.slice(tailAt), "router keys outside the blocks must not change");
+
   assert.equal(outcome.free.covered.length, 1);
   assert.deepEqual(outcome.free.unpriced, [], "the snapshot fixture reports no exclusions");
+}
+
+test("a full config accepts a generated group without disturbing its own entries", () => {
+  assertGeneratedGroupAccepted(FULL_CONFIG);
 });
 
 test("sync writes a generated group into the config and reports it", async () => {
@@ -431,6 +523,68 @@ test("sync writes a generated group into the config and reports it", async () =>
     assert.equal(ended.state, "written");
     assert.match(ended.message, /removed 1 group/);
     assert.ok(!(await readFile(config, "utf8")).includes("code-free-explabs"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+
+test("free probe targets the published ExpLabs v1 endpoint", () => {
+  assert.equal(FREE_PROBE_TARGETS[0].baseUrl, "https://api.experientiallabs.ai/v1");
+  assert.equal(FREE_PROBE_TARGETS[0].host, EXP_LABS);
+});
+
+test("snapshot loading distinguishes missing, corrupt, directory and permission failures", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "free-read-"));
+  try {
+    assert.equal(await loadFreeSnapshot(join(dir, "missing.json")), undefined);
+    const corrupt = join(dir, "corrupt.json");
+    await writeFile(corrupt, "{broken");
+    await assert.rejects(loadFreeSnapshot(corrupt), {
+      message: `invalid free snapshot ${corrupt}: malformed JSON or unusable snapshot`,
+    });
+    await assert.rejects(loadFreeSnapshot(dir), (error: Error) => {
+      assert.ok(error.message.startsWith(`cannot read free snapshot ${dir}: `));
+      assert.match(error.message, /EISDIR/);
+      return true;
+    });
+    const denied = join(dir, "denied.json");
+    const read = t.mock.method(fs, "readFile", async () => {
+      throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(loadFreeSnapshot(denied), {
+        message: `cannot read free snapshot ${denied}: permission denied`,
+      });
+    } finally {
+      read.mock.restore();
+      syncBuiltinESMExports();
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("config reports a corrupt free snapshot and preserves managed model_list entries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "free-config-read-"));
+  try {
+    const config = join(dir, "config.yaml");
+    const scores = join(dir, "scores.json");
+    const free = join(dir, "free.json");
+    const withPromo = compose(CONFIG, snapshotWith([{ id: "ling-3.1-flash" }])).text;
+    await writeFile(config, withPromo);
+    await writeFile(scores, JSON.stringify({ scores: { "model-x": { score: 40 } } }));
+    await writeFile(free, "{broken");
+    for (const operation of [checkFallback, syncFallback]) {
+      const result = await operation(config, scores, free);
+      assert.notEqual(result.state, "error");
+      assert.ok(result.message.includes(`invalid free snapshot ${free}: malformed JSON or unusable snapshot`));
+      assert.ok(result.message.includes("model_list was left exactly as found"));
+    }
+    const written = await readFile(config, "utf8");
+    assert.equal(written.split("router_settings:")[0], withPromo.split("router_settings:")[0]);
+    assert.ok(written.includes("code-free-explabs-ling-3.1-flash"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

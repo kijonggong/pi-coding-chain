@@ -67,7 +67,7 @@ import {
   validateSlug,
 } from "./register.ts";
 import type { NewModel, UpstreamOption } from "./register.ts";
-import { loadScores, scoreFor } from "./scores.ts";
+import { loadScores, resolveScoresPath, scoreFor } from "./scores.ts";
 
 const COMMAND = "coding-fallback";
 
@@ -78,21 +78,12 @@ const REFRESH_ENV = "PI_CODING_FALLBACK_FREE_REFRESH";
 const ADD_USAGE = `/${COMMAND} add <model-id> <host-or-slug> [<group-name>]`;
 
 function extensionDir(): string {
-  try {
-    return dirname(fileURLToPath(import.meta.url));
-  } catch {
-    return process.cwd();
-  }
+  return dirname(fileURLToPath(import.meta.url));
 }
 
 function resolveConfigPath(): string {
   const override = process.env.PI_CODING_FALLBACK_CONFIG;
   return override && override.trim() !== "" ? override : join(getAgentDir(), "litellm_config.yaml");
-}
-
-function resolveScoresPath(): string {
-  const override = process.env.PI_CODING_FALLBACK_SCORES;
-  return override && override.trim() !== "" ? override : join(extensionDir(), "aaii-scores.json");
 }
 
 function resolveFreePath(): string {

@@ -11,12 +11,13 @@
  */
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { CODING_CHAIN, orderChain, readModelEntries } from "./chain.ts";
-import { aliasMapsFromSnapshot, parseScores, scoreFor, unscoredModels } from "./scores.ts";
+import { aliasMapsFromSnapshot, loadScores, resolveScoresPath, parseScores, scoreFor, unscoredModels } from "./scores.ts";
 import type { ScoreSnapshot } from "./scores.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -53,12 +54,12 @@ test("an alias key is normalised the same way as a model id", () => {
   assert.equal(scoreFor(SNAPSHOT, "FINE_TUNE"), 39.8);
 });
 
-test("aliasMapsFromSnapshot reads both maps and survives a bad file", () => {
+test("aliasMapsFromSnapshot reads both maps and rejects malformed JSON", () => {
   assert.deepEqual(aliasMapsFromSnapshot(JSON.stringify({ aliases: { a: "b" }, aliasNotes: { a: "why" } })), {
     aliases: { a: "b" },
     aliasNotes: { a: "why" },
   });
-  assert.deepEqual(aliasMapsFromSnapshot("not json at all"), { aliases: {}, aliasNotes: {} });
+  assert.throws(() => aliasMapsFromSnapshot("not json at all"), SyntaxError);
   assert.deepEqual(aliasMapsFromSnapshot("[]"), { aliases: {}, aliasNotes: {} });
   assert.deepEqual(aliasMapsFromSnapshot(JSON.stringify({ aliases: { a: 7, b: "ok" } })), {
     aliases: { b: "ok" },
@@ -115,4 +116,32 @@ test("an aliased model is ranked by the inherited score, not left at the back", 
     ["code-2-cline-other", "code-7-explabs-fine-tune"],
     "drop the alias and the model goes back to the end of its chain",
   );
+});
+
+
+test("loadScores only treats ENOENT as an empty table and names other failures", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "score-errors-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  assert.equal((await loadScores(join(directory, "absent.json"))).scores.size, 0);
+  const path = join(directory, "broken.json");
+  for (const text of ["{broken", "null"]) {
+    await writeFile(path, text);
+    await assert.rejects(loadScores(path), (error: Error) => error.message.includes(path) && error.message.includes("invalid scores"));
+  }
+  await assert.rejects(loadScores(directory), (error: Error) => error.message.includes(directory) && error.message.includes("EISDIR"));
+});
+
+test("score path is module-relative and honors a nonblank environment override", () => {
+  const saved = process.env.PI_CODING_FALLBACK_SCORES;
+  try {
+    delete process.env.PI_CODING_FALLBACK_SCORES;
+    assert.equal(resolveScoresPath(), join(HERE, "aaii-scores.json"));
+    process.env.PI_CODING_FALLBACK_SCORES = " ";
+    assert.equal(resolveScoresPath(), join(HERE, "aaii-scores.json"));
+    process.env.PI_CODING_FALLBACK_SCORES = "custom-scores.json";
+    assert.equal(resolveScoresPath(), "custom-scores.json");
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_FALLBACK_SCORES;
+    else process.env.PI_CODING_FALLBACK_SCORES = saved;
+  }
 });

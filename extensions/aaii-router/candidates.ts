@@ -16,7 +16,7 @@
  * that can see, and keeps the policy order inside each group.
  */
 
-import { tierForHost, TIER_UNKNOWN } from "../coding-fallback/providers.ts";
+import { parseProviderUrl, tierForHost, TIER_UNKNOWN } from "../coding-fallback/providers.ts";
 import { scoreFor } from "../coding-fallback/scores.ts";
 import type { ScoreSnapshot } from "../coding-fallback/scores.ts";
 
@@ -53,25 +53,6 @@ export interface BuildOptions {
 /** The LiteLLM proxy origin: the default, and what the setting starts from. */
 export const DEFAULT_EXCLUDED_ORIGINS: readonly string[] = ["http://127.0.0.1:4000"];
 
-function originOf(baseUrl: string | undefined): string {
-  if (!baseUrl) return "";
-  try {
-    const url = new URL(baseUrl);
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return "";
-  }
-}
-
-function hostOf(baseUrl: string | undefined): string {
-  if (!baseUrl) return "";
-  try {
-    return new URL(baseUrl).hostname;
-  } catch {
-    return "";
-  }
-}
-
 export function candidateLabel(model: PhysicalModel): string {
   return `${model.provider}/${model.id}`;
 }
@@ -89,7 +70,8 @@ export function eligibleModels(
   for (const model of models) {
     const label = candidateLabel(model);
     if (seen.has(label)) continue;
-    if (excluded.has(originOf(model.baseUrl))) continue;
+    const origin = parseProviderUrl(model.baseUrl)?.origin;
+    if (origin !== undefined && excluded.has(origin)) continue;
     if (excludedProviders.has(model.provider)) continue;
     seen.add(label);
     kept.push(model);
@@ -106,12 +88,13 @@ export function buildCandidates(
   return eligibleModels(models, options)
     .map((model) => {
       const score = scoreFor(scores, model.id);
+      const source = parseProviderUrl(model.baseUrl);
       return {
         label: candidateLabel(model),
         provider: model.provider,
         id: model.id,
         score,
-        tier: tierForHost(hostOf(model.baseUrl)),
+        tier: source === undefined ? TIER_UNKNOWN : tierForHost(source.hostname),
         supportsImages: model.supportsImages === true,
       };
     })

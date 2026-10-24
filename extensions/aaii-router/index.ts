@@ -48,6 +48,13 @@
  * form for a session with no UI: `set <key> <value>`, `reset`, and argument
  * completions that list the subcommands, the keys and the short values.
  *
+ * The chain itself is edited in `/aaii-router fallback`: the candidates as a
+ * list, where `p` tries a model first and `x` leaves one out without excluding
+ * its whole provider. A pin is stored as an order of labels, so the score order
+ * still decides everything the operator did not touch. Both lists are global
+ * only: they decide where a request goes, so a checked-out repository may not
+ * set them, and the editor writes the global file rather than asking which one.
+ *
  * Three sources, in this order: the global file
  * (`~/.pi/agent/aaii-router.json`, or `PI_AAII_ROUTER_SETTINGS`), a
  * project-local `.pi/aaii-router.json` that only counts when Pi trusts the
@@ -68,6 +75,7 @@
  * Commands
  * --------
  *   /aaii-router            list the candidates in order, with score and tier
+ *   /aaii-router fallback   edit the chain: pin, exclude and reorder candidates
  *   /aaii-router settings   open the settings window
  *   /aaii-router set <key> <value>   write one setting without the window
  *   /aaii-router reset      write the default settings
@@ -75,9 +83,9 @@
  *   /aaii-router reload     rebuild the list after a score or credential change
  */
 
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { VIRTUAL_MODEL_STATE_ENTRY, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
+import { TIER_UNKNOWN } from "../coding-fallback/providers.ts";
 import type {
   CustomEntry,
   ExtensionAPI,
@@ -85,6 +93,8 @@ import type {
   ExtensionContext,
   VirtualModelStateData,
 } from "@earendil-works/pi-coding-agent";
+
+import { VIRTUAL_MODEL_STATE_ENTRY, getAgentDir } from "@earendil-works/pi-coding-agent";
 import {
   buildCandidates,
   containsImage,
@@ -93,7 +103,9 @@ import {
   unscoredCandidates,
 } from "./candidates.ts";
 import type { Candidate, PhysicalModel } from "./candidates.ts";
+import { applyChainSettings } from "./chain-order.ts";
 import {
+  chooseTurnCandidate,
   classifyFailure,
   coolingFor,
   coolingLabels,
@@ -106,6 +118,8 @@ import {
   withCooldown,
 } from "./cooldown.ts";
 import type { CooldownMap } from "./cooldown.ts";
+import { FallbackEditor } from "./fallback-tui.ts";
+import type { FallbackOutcome } from "./fallback-tui.ts";
 import {
   DEFAULT_SETTINGS,
   SETTINGS,
@@ -114,11 +128,11 @@ import {
   describeSettings,
   editSetting,
   loadSettings,
-  readSettingsFile,
+  routingChanged,
   saveSettings,
 } from "./settings.ts";
 import type { SettingDescriptor, Settings } from "./settings.ts";
-import { loadScores } from "../coding-fallback/scores.ts";
+import { loadScores, resolveScoresPath } from "../coding-fallback/scores.ts";
 import type { ScoreSnapshot } from "../coding-fallback/scores.ts";
 
 const PROVIDER = "aaii";
@@ -132,12 +146,22 @@ const SETTINGS_ENV = "PI_AAII_ROUTER_SETTINGS";
 /** API id Pi gives virtual catalog entries; they must never be candidates. */
 const VIRTUAL_API = "pi-virtual";
 
-interface RouterState {
+export interface RouterState {
   /** `provider/id` of the candidate the session is currently on. */
   label: string;
   /** Candidates that failed recently, keyed by their label. */
   cooldowns?: CooldownMap;
+  /** Monotonic counter incremented whenever chain configuration changes. */
+  epoch?: number;
 }
+
+let chainEpoch = 0;
+
+function bumpChainEpoch(): void {
+  chainEpoch++;
+}
+
+
 
 /**
  * Failures recorded by a command, merged into the state on the next request.
@@ -150,19 +174,6 @@ let pendingCooldowns: CooldownMap = {};
 let cache: Registry | undefined;
 let settingsCache: Settings | undefined;
 let settingsNotes: readonly string[] = [];
-
-function extensionDir(): string {
-  try {
-    return dirname(fileURLToPath(import.meta.url));
-  } catch {
-    return process.cwd();
-  }
-}
-
-function scoresPath(): string {
-  const override = process.env.PI_CODING_FALLBACK_SCORES;
-  return override && override.trim() !== "" ? override : join(extensionDir(), "..", "coding-fallback", "aaii-scores.json");
-}
 
 /** The global settings file: what the window and `set` write. */
 function globalSettingsPath(): string {
@@ -189,8 +200,17 @@ async function currentSettings(ctx: ExtensionContext): Promise<Settings> {
     process.env,
   );
   const notes = [...parsed.notes];
-  if (!trusted && (await readSettingsFile(projectSettingsPath(ctx))) !== undefined) {
-    notes.push(`ignored ${projectSettingsPath(ctx)}: the project is not trusted`);
+  if (!trusted) {
+    const path = projectSettingsPath(ctx);
+    try {
+      await lstat(path);
+      notes.push(`ignored ${path}: the project is not trusted`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        const reason = error instanceof Error ? error.message : String(error);
+        notes.push(`ignored ${path}: the project is not trusted; could not check existence: ${reason}`);
+      }
+    }
   }
   settingsCache = parsed.settings;
   settingsNotes = notes;
@@ -231,7 +251,7 @@ function physicalModels(ctx: ExtensionContext): PhysicalModel[] {
 
 async function registry(ctx: ExtensionContext, settings: Settings): Promise<Registry> {
   if (cache) return cache;
-  const snapshot = await loadScores(scoresPath());
+  const snapshot = await loadScores(resolveScoresPath());
   cache = {
     snapshot,
     candidates: buildCandidates(physicalModels(ctx), snapshot, {
@@ -261,7 +281,7 @@ function currentCooldowns(ctx: ExtensionContext | undefined, now: number): Coold
 
 function describe(candidate: Candidate): string {
   const score = candidate.score === undefined ? "unranked" : String(candidate.score);
-  const tier = candidate.tier >= 99 ? "no tier" : "tier " + candidate.tier;
+  const tier = candidate.tier >= TIER_UNKNOWN ? "no tier" : "tier " + candidate.tier;
   return `${candidate.label} [${score}, ${tier}]`;
 }
 
@@ -271,10 +291,7 @@ function resolve(ctx: ExtensionContext, candidate: Candidate | undefined) {
   return ctx.modelRegistry.find(candidate.provider, candidate.id);
 }
 
-/**
- * Publish what the session is on. A status failure is decoration failing, not a
- * request failing, so it never escapes.
- */
+/** Publish status through the SDK UI, which is a no-op when headless. */
 function publishStatus(
   ctx: ExtensionContext,
   label: string | undefined,
@@ -283,16 +300,12 @@ function publishStatus(
   now: number,
   enabled: boolean,
 ): void {
-  try {
-    if (!enabled || !label) {
-      ctx.ui.setStatus(STATUS_KEY, undefined);
-      return;
-    }
-    const cooling = coolingLabels(cooldowns, now).length;
-    ctx.ui.setStatus(STATUS_KEY, `${PROVIDER} → ${label}${cooling > 0 ? ` · ${cooling}/${total} cooling` : ""}`);
-  } catch {
-    // No status line. The route still happened.
+  if (!enabled || !label) {
+    ctx.ui.setStatus(STATUS_KEY, undefined);
+    return;
   }
+  const cooling = coolingLabels(cooldowns, now).length;
+  ctx.ui.setStatus(STATUS_KEY, `${PROVIDER} → ${label}${cooling > 0 ? ` · ${cooling}/${total} cooling` : ""}`);
 }
 
 function report(
@@ -364,6 +377,28 @@ async function editSettingDialog(
   return edited.settings;
 }
 
+/**
+ * Commit settings changes across all entry points:
+ * save → bump the chain epoch only if routingChanged → forget (cache invalidation) → refresh the status line → report the keys env is overriding.
+ */
+async function commitSettings(
+  ctx: ExtensionCommandContext,
+  before: Settings,
+  after: Settings,
+  path: string,
+  infoMessage: string,
+): Promise<void> {
+  await saveSettings(path, after);
+  if (routingChanged(before, after)) bumpChainEpoch();
+  forget();
+  publishStatus(ctx, undefined, {}, 0, Date.now(), false);
+  ctx.ui?.notify?.(infoMessage, "info");
+  const held = envHeldKeys();
+  if (held.length > 0) {
+    ctx.ui?.notify?.(`${COMMAND}: ${held.join(", ")} still override this session`, "warning");
+  }
+}
+
 async function openSettings(ctx: ExtensionCommandContext): Promise<void> {
   const path = globalSettingsPath();
   if (!ctx.hasUI) {
@@ -381,40 +416,74 @@ async function openSettings(ctx: ExtensionCommandContext): Promise<void> {
     const choice = await ctx.ui.select(`${COMMAND} settings — ${path}`, options);
     if (!choice || choice === "Done") return;
 
+    let nextSettings: Settings;
     if (choice === "Reset to defaults") {
       const confirmed = await ctx.ui.confirm(
         "Reset to defaults",
         `Write the default settings to ${path}? An environment override still wins over the file.`,
       );
       if (!confirmed) continue;
-      settings = DEFAULT_SETTINGS;
+      nextSettings = DEFAULT_SETTINGS;
     } else {
       const descriptor = SETTINGS.find((entry) => choice.startsWith(`${entry.label}:`));
       if (!descriptor) continue;
       const edited = await editSettingDialog(ctx, descriptor, settings);
       if (!edited) continue;
-      settings = edited;
+      nextSettings = edited;
     }
 
     try {
-      await saveSettings(path, settings);
+      await commitSettings(ctx, settings, nextSettings, path, `${COMMAND}: settings written to ${path}`);
+      settings = nextSettings;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ctx.ui.notify(`${COMMAND}: could not write ${path}: ${message}`, "error");
       continue;
     }
-
-    forget();
-    publishStatus(ctx, undefined, {}, 0, Date.now(), false);
-    ctx.ui.notify(`${COMMAND}: settings written to ${path}`, "info");
-
-    // The one source this window cannot write. Saying so beats a stored value
-    // that looks applied and is not.
-    const held = envHeldKeys();
-    if (held.length > 0) {
-      ctx.ui.notify(`${COMMAND}: ${held.join(", ")} still override this session`, "warning");
-    }
   }
+}
+
+async function openFallbackEditor(ctx: ExtensionCommandContext): Promise<void> {
+  const path = globalSettingsPath();
+  // `ctx.ui.custom` belongs to the interactive TUI: RPC and print modes answer
+  // `undefined` for it, so the editor is only offered where it can be drawn.
+  if (ctx?.hasUI !== true || ctx.mode !== "tui") {
+    notify(
+      `${COMMAND}: the chain editor needs the TUI (this session is "${ctx?.mode ?? "none"}"). ` +
+        `Use \`/aaii-router set pinned <provider/id,...>\` or \`/aaii-router set models <provider/id,...>\` here, or edit ${path}.`,
+      "warning",
+    );
+    return;
+  }
+
+  const settings = await currentSettings(ctx);
+  const { candidates } = await registry(ctx, settings);
+
+  const held = SETTINGS.filter(
+    (descriptor) =>
+      (descriptor.key === "pinned" || descriptor.key === "models") &&
+      (process.env[descriptor.envVar] ?? "").trim() !== "",
+  );
+  const heldEnvVars = held.map((descriptor) => descriptor.envVar);
+
+  // The component owns the draft; writing it is handled through onSave, keeping
+  // the editor open if writing fails so the draft is not lost.
+  await ctx.ui.custom<FallbackOutcome>((tui, theme, _keybindings, done) =>
+    new FallbackEditor(
+      {
+        candidates,
+        settings,
+        path,
+        heldEnvVars,
+        onSave: async (savedSettings) => {
+          await commitSettings(ctx, settings, savedSettings, path, `${COMMAND}: chain written to ${path}`);
+        },
+      },
+      theme,
+      done,
+      () => tui.requestRender(),
+    ),
+  );
 }
 
 export default function (pi: ExtensionAPI) {
@@ -431,7 +500,10 @@ export default function (pi: ExtensionAPI) {
       const carried = { ...request.state?.cooldowns, ...pendingCooldowns };
       pendingCooldowns = {};
       const cooldowns = pruneCooldowns(carried, now);
-      const ordered = orderForRequest(candidates, settings.preferVision && containsImage(request.messages));
+      const ordered = orderForRequest(
+        applyChainSettings(candidates, settings),
+        settings.preferVision && containsImage(request.messages),
+      );
 
       const head = ordered[0];
       if (!head) {
@@ -440,11 +512,11 @@ export default function (pi: ExtensionAPI) {
         );
       }
 
-      const stick = (candidate: Candidate, next: CooldownMap) => {
+      const stick = (candidate: Candidate, next: CooldownMap, epoch = chainEpoch) => {
         const model = resolve(ctx, candidate);
         if (!model) throw new Error(`[${COMMAND}] ${candidate.label} is no longer in the catalog`);
         publishStatus(ctx, candidate.label, next, ordered.length, now, settings.statusLine);
-        return { model, thinkingLevel: request.thinkingLevel, state: { label: candidate.label, cooldowns: next } };
+        return { model, thinkingLevel: request.thinkingLevel, state: { label: candidate.label, cooldowns: next, epoch } };
       };
 
       // Never move the chain on a follow-up: keeping the model keeps the prompt cache.
@@ -453,9 +525,9 @@ export default function (pi: ExtensionAPI) {
         const sticky = ordered.find(
           (candidate) => candidate.provider === previous?.provider && candidate.id === previous?.id,
         );
-        if (sticky) return stick(sticky, cooldowns);
+        if (sticky) return stick(sticky, cooldowns, request.state?.epoch ?? chainEpoch);
         const remembered = ordered.find((candidate) => candidate.label === request.state?.label);
-        return stick(remembered ?? head, cooldowns);
+        return stick(remembered ?? head, cooldowns, request.state?.epoch ?? chainEpoch);
       }
 
       // A failed request: remember why, then step past the model that failed.
@@ -470,23 +542,17 @@ export default function (pi: ExtensionAPI) {
             `[${COMMAND}] ${failedLabel} failed and the chain is exhausted after ${ordered.length} candidates`,
           );
         }
-        return stick(candidate, next);
+        return stick(candidate, next, chainEpoch);
       }
 
-      // A new user turn, or a request outside the agent loop. Stay where the
-      // session already is — unless that candidate is cooling, which is what
-      // keeps a failed model from being retried once per turn.
-      const remembered = ordered.find((candidate) => candidate.label === request.state?.label);
-      const candidate =
-        remembered && coolingFor(cooldowns, remembered.label, now) === undefined
-          ? remembered
-          : (preferred(ordered, cooldowns, now) ?? head);
-      return stick(candidate, cooldowns);
+      // A new user turn, or a request outside the agent loop.
+      const candidate = chooseTurnCandidate(ordered, cooldowns, request.state, chainEpoch, now);
+      return stick(candidate, cooldowns, chainEpoch);
     },
   });
 
   pi.registerCommand(COMMAND, {
-    description: "List the candidates, open the settings window, or step past the current model",
+    description: "List the candidates, edit the chain or the settings, or step past the current model",
     // The subcommands and the setting keys are discoverable from the prompt, so
     // the command does not have to be remembered to be used.
     getArgumentCompletions: (prefix) =>
@@ -503,6 +569,11 @@ export default function (pi: ExtensionAPI) {
 
       if (subcommand === "settings" || subcommand === "config") {
         await openSettings(ctx);
+        return;
+      }
+
+      if (subcommand === "fallback") {
+        await openFallbackEditor(ctx);
         return;
       }
 
@@ -526,24 +597,25 @@ export default function (pi: ExtensionAPI) {
           );
           return;
         }
-        const edited = editSetting(await currentSettings(ctx), descriptor.key, raw);
+        const settings = await currentSettings(ctx);
+        const edited = editSetting(settings, descriptor.key, raw);
         if (!edited.ok) {
           ctx.ui?.notify?.(`${COMMAND}: ${edited.reason}`, "error");
           return;
         }
         try {
-          await saveSettings(globalSettingsPath(), edited.settings);
+          await commitSettings(
+            ctx,
+            settings,
+            edited.settings,
+            globalSettingsPath(),
+            `${COMMAND}: ${descriptor.label} = ${descriptor.value(edited.settings)}`,
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           ctx.ui?.notify?.(`${COMMAND}: could not write ${globalSettingsPath()}: ${message}`, "error");
           return;
         }
-        forget();
-        const held = (process.env[descriptor.envVar] ?? "").trim() !== "";
-        ctx.ui?.notify?.(
-          `${COMMAND}: ${descriptor.label} = ${descriptor.value(edited.settings)}${held ? ` (written, but ${descriptor.envVar} overrides this session)` : ""}`,
-          held ? "warning" : "info",
-        );
         return;
       }
 
@@ -552,22 +624,21 @@ export default function (pi: ExtensionAPI) {
         if (ctx.hasUI && !(await ctx.ui.confirm("Reset to defaults", `Write the default settings to ${path}?`))) {
           return;
         }
+        const settings = await currentSettings(ctx);
         try {
-          await saveSettings(path, DEFAULT_SETTINGS);
+          await commitSettings(ctx, settings, DEFAULT_SETTINGS, path, `${COMMAND}: defaults written to ${path}`);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           ctx.ui?.notify?.(`${COMMAND}: could not write ${path}: ${message}`, "error");
           return;
         }
-        forget();
-        ctx.ui?.notify?.(`${COMMAND}: defaults written to ${path}`, "info");
         return;
       }
 
       if (subcommand === "next") {
         const settings = await currentSettings(ctx);
         const { candidates } = await registry(ctx, settings);
-        const label = branchState(ctx)?.label ?? candidates[0]?.label;
+        const label = branchState(ctx)?.label ?? applyChainSettings(candidates, settings)[0]?.label;
         if (!label) {
           ctx.ui?.notify?.(`${COMMAND}: no candidate to step past`, "warning");
           return;
@@ -589,7 +660,13 @@ export default function (pi: ExtensionAPI) {
       const { snapshot, candidates } = await registry(ctx, settings);
       const now = Date.now();
       ctx.ui?.notify?.(
-        report(snapshot, candidates, currentCooldowns(ctx, now), settings, settingsNotes),
+        report(
+          snapshot,
+          applyChainSettings(candidates, settings),
+          currentCooldowns(ctx, now),
+          settings,
+          settingsNotes,
+        ),
         "info",
       );
     },
@@ -599,10 +676,6 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     forget();
     pendingCooldowns = {};
-    try {
-      ctx?.ui?.setStatus?.(STATUS_KEY, undefined);
-    } catch {
-      // A UI that refuses the call must not break the session.
-    }
+    ctx.ui.setStatus(STATUS_KEY, undefined);
   });
 }

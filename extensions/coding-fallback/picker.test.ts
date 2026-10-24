@@ -18,11 +18,10 @@
  */
 
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
+import { createModuleHarness } from "../../test-support/module-harness.ts";
 import { pickerHint, pickerTitle } from "./catalog.ts";
 import type { Candidate } from "./catalog.ts";
 import type { PickerOutcome } from "./picker.ts";
@@ -44,8 +43,7 @@ type PickerClass = new (
   done: (outcome: PickerOutcome) => void,
 ) => Component;
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const MODULES = ["picker.ts", "catalog.ts", "chain.ts", "free-models.ts", "register.ts", "providers.ts", "scores.ts"];
+const MODULES = ["picker.ts", "catalog.ts", "chain.ts", "free-models.ts", "register.ts", "providers.ts", "scores.ts", "index.ts", "config.ts", "listing.ts", "free-fetch.ts"];
 
 const PI_TUI_STUB = `
 const down = "\\x1b[B";
@@ -147,6 +145,7 @@ export class Input {
 `;
 
 const SDK_STUB = `
+export const getAgentDir = () => "unused-sdk-agent-directory";
 export function getSelectListTheme() {
   const plain = (text) => text;
   return {
@@ -162,31 +161,22 @@ export function getSelectListTheme() {
 let dir: string;
 let ModelPicker: PickerClass;
 
+let moduleHarness: Awaited<ReturnType<typeof createModuleHarness>>;
+after(async () => { await moduleHarness?.cleanup(); });
+
 before(async () => {
-  dir = await mkdtemp(join(tmpdir(), "coding-fallback-picker-"));
-  for (const name of MODULES) await copyFile(join(HERE, name), join(dir, name));
-
-  const packages = [
-    ["@earendil-works/pi-tui", PI_TUI_STUB],
-    ["@earendil-works/pi-coding-agent", SDK_STUB],
-  ] as const;
-  for (const [pkg, body] of packages) {
-    const root = join(dir, "node_modules", pkg);
-    await mkdir(root, { recursive: true });
-    await writeFile(
-      join(root, "package.json"),
-      JSON.stringify({ name: pkg, type: "module", main: "index.js", exports: { ".": "./index.js" } }),
-      "utf8",
-    );
-    await writeFile(join(root, "index.js"), body, "utf8");
-  }
-
-  const loaded = await import(pathToFileURL(join(dir, "picker.ts")).href);
-  ModelPicker = loaded.ModelPicker as PickerClass;
-});
-
-after(async () => {
-  await rm(dir, { recursive: true, force: true });
+  const harness = moduleHarness = await createModuleHarness(
+    Object.fromEntries(MODULES.map((name) => [name, new URL(name, import.meta.url)])),
+    () => Object.fromEntries([
+      ["@earendil-works/pi-tui", PI_TUI_STUB],
+      ["@earendil-works/pi-coding-agent", SDK_STUB],
+    ].map(([name, body]) => [name, {
+      "package.json": JSON.stringify({ name, type: "module", main: "index.js", exports: { ".": "./index.js" } }),
+      "index.js": body,
+    }])),
+  );
+  dir = harness.directory;
+  ModelPicker = (await moduleHarness.importModule("picker.ts")).ModelPicker as PickerClass;
 });
 
 const THEME = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
@@ -296,4 +286,30 @@ test("enter with an empty list does nothing", () => {
   picker.handleInput(ENTER);
   assert.equal(state.outcome, undefined);
   assert.equal(picker.markedCount, 0);
+});
+
+
+test("add score lookup propagates corrupt scores and uses the module-relative default", async (t) => {
+  const envKeys = ["PI_CODING_FALLBACK_CONFIG", "PI_CODING_FALLBACK_SCORES", "PI_CODING_FALLBACK_FREE_REFRESH"];
+  const saved = envKeys.map((key) => [key, process.env[key]] as const);
+  t.after(() => { for (const [key, value] of saved) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  } });
+  const config = join(dir, "command-fixture.yaml");
+  const original = "model_list:\n- model_name: code-1-nvidia-base\n  litellm_params:\n    model: openai/base\n    api_base: https://integrate.api.nvidia.com/v1\n";
+  await writeFile(config, original);
+  process.env.PI_CODING_FALLBACK_CONFIG = config;
+  process.env.PI_CODING_FALLBACK_FREE_REFRESH = "off";
+  delete process.env.PI_CODING_FALLBACK_SCORES;
+  await writeFile(join(dir, "aaii-scores.json"), '{"scores":{"new-model":{"score":87}}}');
+  const register = (await moduleHarness.importModule("index.ts")).default;
+  let command: (args: string, ctx: object) => Promise<void>;
+  register({ registerCommand: (_name: string, definition: { handler: typeof command }) => { command = definition.handler; }, on: () => {} });
+  let confirmation = "";
+  const ctx = { hasUI: true, ui: { confirm: async (_title: string, text: string) => { confirmation = text; return false; }, notify: () => {} } };
+  await command!("add new-model nvidia", ctx);
+  assert.match(confirmation, /AAII 87/);
+  await writeFile(join(dir, "aaii-scores.json"), "{broken");
+  await assert.rejects(command!("add new-model nvidia", ctx), /invalid scores.*aaii-scores.json/);
+  assert.equal(await readFile(config, "utf8"), original);
 });
