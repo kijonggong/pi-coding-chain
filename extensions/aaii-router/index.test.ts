@@ -20,7 +20,7 @@ after(async () => { await moduleHarness?.cleanup(); });
 
 before(async () => {
   const modules = [
-    ...["index.ts", "candidates.ts", "chain-order.ts", "cooldown.ts", "routes.ts", "settings.ts", "fallback-editor.ts", "fallback-tui.ts"]
+    ...["index.ts", "candidates.ts", "chain-order.ts", "cooldown.ts", "groups.ts", "strategy.ts", "explain.ts", "settings.ts", "fallback-editor.ts", "fallback-tui.ts"]
       .map((name) => [`aaii-router/${name}`, new URL(name, import.meta.url)] as const),
     ...["providers.ts", "scores.ts"]
       .map((name) => [`coding-fallback/${name}`, new URL(`../coding-fallback/${name}`, import.meta.url)] as const),
@@ -53,10 +53,11 @@ async function harness(
     a: { score: 90 }, b: { score: 60 }, c: { score: 30 },
   } }));
   const routes = new Map<string, Route>();
+  const registeredIds: string[] = [];
   let command!: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
   let sessionStart!: (event: unknown, ctx: ExtensionCommandContext) => void;
-  registerRouter({
-    registerVirtualModel: (definition) => { routes.set(definition.id, definition.route); },
+  await registerRouter({
+    registerVirtualModel: (definition) => { registeredIds.push(definition.id); routes.set(definition.id, definition.route); },
     registerCommand: (_name, definition) => { command = definition.handler; },
     on: (event, handler) => { if (event === "session_start") sessionStart = handler; },
   } as ExtensionAPI);
@@ -110,6 +111,8 @@ async function harness(
   };
   return {
     directory,
+    /** The virtual-model ids the factory registered, in order. */
+    registeredIds,
     request,
     requestOn,
     /** The session branch double, so a test can add a `model_change`. */
@@ -127,6 +130,33 @@ async function harness(
     session: ctx as unknown as { mode: string },
   };
 }
+
+test("the extension registers the full chain and the seeded family groups as virtual models", async (t) => {
+  const h = await harness(t);
+  assert.deepEqual(h.registeredIds, ["aaii", "deepseek-v4.1-flash", "glm-5.3-flash"]);
+});
+
+test("explain reports the last routing decision, or says there is none yet", async (t) => {
+  const h = await harness(t);
+  await h.command("explain");
+  assert.match(h.notifications.at(-1)!.message, /no routing decision yet/);
+
+  await h.request();
+  h.notifications.length = 0;
+  await h.command("explain");
+  const message = h.notifications.at(-1)!.message;
+  assert.match(message, /^aaii-router: aaii: one\/a — fresh turn/);
+  assert.match(message, /order: \*one\/a → two\/b → three\/c/);
+});
+
+test("affinity turn starts every new user turn from the head of the order", async (t) => {
+  const h = await harness(t, { ...DEFAULT_SETTINGS, affinity: "turn" });
+  assert.equal((await h.request()).state.label, "one/a");
+  // A second new turn with remembered state still starts from the head.
+  const remembered = await h.remember(2);
+  assert.equal(remembered.label, "three/c");
+  assert.equal((await h.request(remembered)).state.label, "one/a");
+});
 
 test("set writes global settings in the SDK agent directory without a path override", async (t) => {
   const h = await harness(t);
@@ -353,6 +383,147 @@ test("a family route orders by the quota that replenishes soonest and steps past
   // The glm-5.3-flash route only sees the flash variant; GLM-5.3 proper is out.
   const glm = await h.requestOn("glm-5.3-flash");
   assert.equal(glm.state.label, "zcode/GLM-5.3-Flash");
+});
+
+test("a retry walks the order the failed turn started from, not the next turn's", async (t) => {
+  const h = await harness(t, { ...DEFAULT_SETTINGS, strategy: "rotate" });
+  // Fresh turn: rotate offset 0 serves the head and stores `{ turns: 1 }`.
+  const first = await h.request();
+  assert.equal(first.state.label, "one/a");
+  // The stored state is fed back unchanged, exactly as a session retry does.
+  // Without the rewind, recomputing rotate from `turns: 1` put one/a last and
+  // the retry threw "chain is exhausted" with two candidates still alive.
+  const retried = await h.request(first.state, {
+    reason: "retry",
+    failed: { model: { provider: "one", id: "a" }, message: { stopReason: "error", errorMessage: "429 too many requests" } },
+  });
+  assert.equal(retried.state.label, "two/b");
+  // The retry does not move the rotation on: the next user turn does.
+  assert.deepEqual(retried.state.strategy, { turns: 1 });
+});
+
+test("least-used counts the model that actually served, including one cooling moved into the seat", async (t) => {
+  const h = await harness(t, { ...DEFAULT_SETTINGS, strategy: "least-used", affinity: "turn" });
+  // All counts tie at zero, so the policy order stands and one/a serves; the
+  // count lands on the responder, which `stick` records whatever put it there.
+  const first = await h.request();
+  assert.equal(first.state.label, "one/a");
+  assert.deepEqual(first.state.strategy, { served: { "one/a": 1 } });
+  // The served count moves one/a to the back of the order: the next fresh
+  // turn serves two/b — the wiring the retry and continuation paths share.
+  const second = await h.request(first.state);
+  assert.equal(second.state.label, "two/b");
+  // Cooling one/a out of the turn still counts the responder, two/b — not the
+  // order head the cooling displaced.
+  const cooled = { ...first.state, cooldowns: { "one/a": { until: Date.now() + 60_000, reason: "rate-limit" as const } } };
+  const third = await h.request(cooled);
+  assert.equal(third.state.label, "two/b");
+  assert.deepEqual(third.state.strategy, { served: { "one/a": 1, "two/b": 1 } });
+});
+
+test("set strategy rotate rotates the next fresh turns without a reload", async (t) => {
+  // Turn affinity keeps every fresh turn on the strategy order's head, so the
+  // rotation is visible; auto affinity would resume the remembered candidate
+  // and is a separate setting's contract.
+  const h = await harness(t, { ...DEFAULT_SETTINGS, affinity: "turn" });
+  const before = await h.request();
+  assert.equal(before.state.label, "one/a");
+  await h.command("set strategy rotate");
+  // The first fresh turn under the new strategy starts the rotation at the
+  // head; the second one walks it — the setting is read again every request.
+  const first = await h.request(before.state);
+  assert.equal(first.state.label, "one/a");
+  assert.deepEqual(first.state.strategy, { turns: 1 });
+  const second = await h.request(first.state);
+  assert.equal(second.state.label, "two/b");
+});
+
+test("a group's own strategy rotates its route while the global order stays on the head", async (t) => {
+  const models = [
+    { provider: "one", id: "probe", api: "test", input: ["text"], baseUrl: "https://one.example/v1" },
+    { provider: "two", id: "probe-fast", api: "test", input: ["text"], baseUrl: "https://two.example/v1" },
+    { provider: "three", id: "other", api: "test", input: ["text"], baseUrl: "https://three.example/v1" },
+  ];
+  const h = await harness(t, {
+    ...DEFAULT_SETTINGS,
+    strategy: "order",
+    affinity: "turn",
+    groups: [{ id: "probe-rot", name: "probe rotate", match: "probe", strategy: "rotate", affinity: "turn" }],
+  }, models);
+  await writeFile(join(h.directory, "scores.json"), JSON.stringify({ scores: {
+    probe: { score: 90 }, "probe-fast": { score: 60 }, other: { score: 30 },
+  } }));
+  // The full chain keeps the global order strategy: turn affinity always
+  // returns to the head.
+  const first = await h.request();
+  assert.equal(first.state.label, "one/probe");
+  assert.equal((await h.request(first.state)).state.label, "one/probe");
+  // The group's own rotate strategy moves its route on, one turn later.
+  const groupFirst = await h.requestOn("probe-rot");
+  assert.equal(groupFirst.state.label, "one/probe");
+  const groupSecond = await h.requestOn("probe-rot", groupFirst.state);
+  assert.equal(groupSecond.state.label, "two/probe-fast");
+});
+
+test("a group's own affinity keeps the session where failure moved it while the global turn affinity returns to the head", async (t) => {
+  const models = [
+    { provider: "one", id: "probe", api: "test", input: ["text"], baseUrl: "https://one.example/v1" },
+    { provider: "two", id: "probe-fast", api: "test", input: ["text"], baseUrl: "https://two.example/v1" },
+    { provider: "three", id: "other", api: "test", input: ["text"], baseUrl: "https://three.example/v1" },
+  ];
+  const h = await harness(t, {
+    ...DEFAULT_SETTINGS,
+    cooldownMs: 0,
+    strategy: "order",
+    affinity: "turn",
+    groups: [{ id: "probe-sess", name: "probe session", match: "probe", affinity: "session" }],
+  }, models);
+  await writeFile(join(h.directory, "scores.json"), JSON.stringify({ scores: {
+    probe: { score: 90 }, "probe-fast": { score: 60 }, other: { score: 30 },
+  } }));
+  const groupFirst = await h.requestOn("probe-sess");
+  assert.equal(groupFirst.state.label, "one/probe");
+  // The failure steps the group to its second candidate; the window is off, so
+  // nothing is cooling afterwards.
+  const retried = await h.requestOn("probe-sess", groupFirst.state, {
+    reason: "retry",
+    failed: { model: models[0], message: { stopReason: "error", errorMessage: "429 too many requests" } },
+  });
+  assert.equal(retried.state.label, "two/probe-fast");
+  // The group's session affinity resumes what failure moved; the inherited
+  // turn affinity would have climbed back to the head.
+  const nextTurn = await h.requestOn("probe-sess", retried.state);
+  assert.equal(nextTurn.state.label, "two/probe-fast");
+});
+
+test("set groups reports the entries it dropped and keeps the valid ones", async (t) => {
+  const h = await harness(t);
+  const value = JSON.stringify([
+    { id: "glm-x", name: "GLM X", match: "glm-5-3-flash" },
+    { id: "aaii", match: "glm-5-3-flash" },
+  ]);
+  await h.command(`set groups ${value}`);
+  const note = h.notifications.find(({ type }) => type === "warning");
+  assert.ok(note, "a partially rejected groups value must be reported");
+  assert.match(note!.message, /groups\[1\].*reserved for the full chain/);
+  // The valid entry survived into the written file.
+  const saved = JSON.parse(await readFile(process.env.PI_AAII_ROUTER_SETTINGS!, "utf8"));
+  assert.deepEqual(saved.groups.map((group: { id: string }) => group.id), ["glm-x"]);
+});
+
+test("settings window reports the groups entries it dropped, like set does", async (t) => {
+  const h = await harness(t);
+  const value = JSON.stringify([
+    { id: "qwen-x", match: "qwen3-8-max" },
+    { id: "aaii", match: "glm-5-3-flash" },
+  ]);
+  await h.window("Routing groups: current", value);
+  const note = h.notifications.find(({ type }) => type === "warning");
+  assert.ok(note, "a partially rejected groups value must be reported");
+  assert.match(note!.message, /groups\[1\].*reserved for the full chain/);
+  // The valid entry survived into the written file.
+  const saved = JSON.parse(await readFile(process.env.PI_AAII_ROUTER_SETTINGS!, "utf8"));
+  assert.deepEqual(saved.groups.map((group: { id: string }) => group.id), ["qwen-x"]);
 });
 
 test("a family route with no candidate refuses rather than guessing a model", async (t) => {

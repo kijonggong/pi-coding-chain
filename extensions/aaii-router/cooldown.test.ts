@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  COOLDOWN_MAX_STRETCH,
   DEFAULT_COOLDOWN_MS,
   chooseTurnCandidate,
   classifyFailure,
@@ -78,7 +79,7 @@ test("a context overflow is stepped past but not remembered", () => {
 test("keeps a failure for the window, then forgets it", () => {
   const after = rememberFailure(undefined, "b/beta", "rate-limit", NOW, DEFAULT_COOLDOWN_MS);
 
-  assert.deepEqual(after["b/beta"], { until: NOW + DEFAULT_COOLDOWN_MS, reason: "rate-limit" });
+  assert.deepEqual(after["b/beta"], { until: NOW + DEFAULT_COOLDOWN_MS, reason: "rate-limit", hits: 1 });
   assert.notEqual(coolingFor(after, "b/beta", NOW + 1000), undefined);
   assert.equal(
     coolingFor(after, "b/beta", NOW + DEFAULT_COOLDOWN_MS),
@@ -173,6 +174,39 @@ test("pairs each candidate with the window it is under", () => {
   assert.equal(paired[2].candidate.index, 2);
 });
 
+test("a repeated failure inside its window stretches the window and counts the hits", () => {
+  const first = rememberFailure(undefined, "b/beta", "rate-limit", NOW, 60_000);
+  assert.deepEqual(first["b/beta"], { until: NOW + 60_000, reason: "rate-limit", hits: 1 });
+
+  // Failing again before the window closed re-opens it from now, for two
+  // windows' worth: the model is degrading, not merely unlucky once.
+  const second = rememberFailure(first, "b/beta", "rate-limit", NOW + 30_000, 60_000);
+  assert.deepEqual(second["b/beta"], { until: NOW + 30_000 + 120_000, reason: "rate-limit", hits: 2 });
+});
+
+test(`the stretch stops at ${COOLDOWN_MAX_STRETCH} windows, so one bad model cannot bench itself for the session`, () => {
+  let cooldowns: CooldownMap | undefined;
+  for (let hits = 1; hits <= COOLDOWN_MAX_STRETCH + 1; hits++) {
+    cooldowns = rememberFailure(cooldowns, "b/beta", "error", NOW, 60_000);
+  }
+  const entry = cooldowns!["b/beta"];
+  assert.equal(entry.hits, COOLDOWN_MAX_STRETCH + 1, "the hits keep counting past the cap");
+  assert.equal(entry.until, NOW + 60_000 * COOLDOWN_MAX_STRETCH, "the window stops growing");
+});
+
+test("a failure after the window closed starts a fresh window instead of stretching the old one", () => {
+  const expired: CooldownMap = { "b/beta": { until: NOW - 1, reason: "rate-limit", hits: 3 } };
+  const next = rememberFailure(expired, "b/beta", "rate-limit", NOW, 60_000);
+  assert.deepEqual(next["b/beta"], { until: NOW + 60_000, reason: "rate-limit", hits: 1 });
+});
+
+test("describeCooldown names the repeat, so escalation is visible in the report", () => {
+  const single = rememberFailure(undefined, "b/beta", "rate-limit", NOW, 60_000);
+  const repeated = rememberFailure(single, "b/beta", "rate-limit", NOW, 60_000);
+  assert.equal(describeCooldown(single["b/beta"], NOW), "cooling 1m, rate-limit");
+  assert.equal(describeCooldown(repeated["b/beta"], NOW), "cooling 2m, rate-limit, 2 failures");
+});
+
 test("chooseTurnCandidate respects valid session epoch, falls back when epoch changed or candidate is cooling", () => {
   // 1. Fresh turn with no state picks preferred (head).
   assert.equal(chooseTurnCandidate(ORDER, undefined, undefined, 0, NOW).label, "a/alpha");
@@ -200,4 +234,20 @@ test("chooseTurnCandidate respects valid session epoch, falls back when epoch ch
     allCooling = rememberFailure(allCooling, item.label, "rate-limit", NOW, 60_000);
   }
   assert.equal(chooseTurnCandidate(ORDER, allCooling, { label: "c/gamma", epoch: 1 }, 1, NOW).label, "a/alpha");
+});
+
+test("the affinity decides how eagerly a new turn returns to the model the session is on", () => {
+  const state = { label: "c/gamma", epoch: 1 };
+  const coolingGamma = rememberFailure(undefined, "c/gamma", "rate-limit", NOW, 60_000);
+
+  // `auto` (the default): the remembered candidate resumes while it is usable
+  // and the chain configuration is unchanged.
+  assert.equal(chooseTurnCandidate(ORDER, undefined, state, 1, NOW).label, "c/gamma");
+  // `session`: it keeps resuming even after a chain configuration change; only
+  // a usable-now failure moves it.
+  assert.equal(chooseTurnCandidate(ORDER, undefined, state, 2, NOW, "session").label, "c/gamma");
+  assert.equal(chooseTurnCandidate(ORDER, coolingGamma, state, 2, NOW, "session").label, "a/alpha");
+  // `turn`: every new user turn starts from the head, remembered or not.
+  assert.equal(chooseTurnCandidate(ORDER, undefined, state, 1, NOW, "turn").label, "a/alpha");
+  assert.equal(chooseTurnCandidate(ORDER, coolingGamma, state, 1, NOW, "turn").label, "a/alpha", "only c/gamma is cooling, so the head stands");
 });

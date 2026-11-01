@@ -18,14 +18,22 @@
 import { parseProviderUrl } from "../coding-fallback/providers.ts";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { DEFAULT_EXCLUDED_ORIGINS } from "./candidates.ts";
-import { DEFAULT_COOLDOWN_MS } from "./cooldown.ts";
+import { DEFAULT_EXCLUDED_ORIGINS, DEFAULT_EXCLUDED_PROVIDERS } from "./candidates.ts";
+import { DEFAULT_COOLDOWN_MS, parseAffinity, AFFINITIES } from "./cooldown.ts";
+import type { Affinity } from "./cooldown.ts";
+import { DEFAULT_GROUPS, parseGroup } from "./groups.ts";
+import type { GroupDefinition } from "./groups.ts";
+import { DEFAULT_STRATEGY, parseStrategy, STRATEGIES } from "./strategy.ts";
+import type { Strategy } from "./strategy.ts";
 
 /** Re-exported so the wizard and the report describe the defaults the router
  * actually applies, rather than repeating them. */
-export { DEFAULT_COOLDOWN_MS, DEFAULT_EXCLUDED_ORIGINS };
+export { DEFAULT_COOLDOWN_MS, DEFAULT_EXCLUDED_ORIGINS, DEFAULT_EXCLUDED_PROVIDERS };
 
-export const SETTING_KEYS = ["cooldown", "vision", "status", "origins", "providers", "models", "pinned", "excluded"] as const;
+export const SETTING_KEYS = [
+  "cooldown", "vision", "status", "origins", "providers", "models", "pinned", "excluded",
+  "strategy", "affinity", "groups",
+] as const;
 export type SettingKey = (typeof SETTING_KEYS)[number];
 
 export interface Settings {
@@ -48,6 +56,12 @@ export interface Settings {
   readonly pinnedModels: readonly string[];
   /** Candidate labels to leave out without excluding their whole provider. */
   readonly excludedModels: readonly string[];
+  /** Distribution strategy for the groups that name none. */
+  readonly strategy: Strategy;
+  /** How eagerly a new turn returns to the model the session is on. */
+  readonly affinity: Affinity;
+  /** The routing groups: named family filters, registered as virtual models. */
+  readonly groups: readonly GroupDefinition[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -55,10 +69,13 @@ export const DEFAULT_SETTINGS: Settings = {
   preferVision: true,
   statusLine: true,
   excludedOrigins: DEFAULT_EXCLUDED_ORIGINS,
-  excludedProviders: [],
+  excludedProviders: DEFAULT_EXCLUDED_PROVIDERS,
   allowedModels: [],
   pinnedModels: [],
   excludedModels: [],
+  strategy: DEFAULT_STRATEGY,
+  affinity: "auto",
+  groups: DEFAULT_GROUPS,
 };
 
 export type SettingKind = "duration" | "toggle" | "list";
@@ -114,7 +131,7 @@ export const SETTINGS: readonly SettingDescriptor[] = [
     label: "Excluded providers",
     kind: "list",
     envVar: "PI_AAII_ROUTER_EXCLUDE_PROVIDERS",
-    help: "Provider ids to leave out of the chain, comma separated, e.g. openrouter. An excluded provider is not a candidate even when it is authenticated.",
+    help: "Provider ids to leave out of the chain, comma separated. The defaults are the router and reseller providers (magpie, openrouter) — this chain calls model hosts directly. Writing an empty value here re-admits every provider.",
     value: (settings) => (settings.excludedProviders.length > 0 ? settings.excludedProviders.join(", ") : "none"),
   },
   {
@@ -140,6 +157,30 @@ export const SETTINGS: readonly SettingDescriptor[] = [
     envVar: "PI_AAII_ROUTER_EXCLUDE_MODELS",
     help: "Candidate labels to leave out of the chain, comma separated as provider/id.",
     value: (settings) => (settings.excludedModels.length > 0 ? settings.excludedModels.join(", ") : "none"),
+  },
+  {
+    key: "strategy",
+    label: "Distribution strategy",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_STRATEGY",
+    help: "How a group spreads its requests over its candidates. A group that names its own strategy in `groups` wins over this one.",
+    value: (settings) => settings.strategy,
+  },
+  {
+    key: "affinity",
+    label: "Turn affinity",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_AFFINITY",
+    help: "How eagerly a new turn returns to the model the session is on: auto resumes it, session stays where failure moved it, turn always starts from the head. A group that names its own affinity in `groups` wins over this one.",
+    value: (settings) => settings.affinity,
+  },
+  {
+    key: "groups",
+    label: "Routing groups",
+    kind: "list",
+    envVar: "PI_AAII_ROUTER_GROUPS",
+    help: "The routing groups as a JSON array of { id, name?, match, strategy?, affinity? }. `match` is a canonical family key; the id `aaii` is reserved for the full chain. Edit this one in the file, not here.",
+    value: (settings) => settings.groups.map((group) => group.id).join(", "),
   },
 ];
 
@@ -249,14 +290,54 @@ export function parseOrigins(text: string): { readonly origins?: string[]; reado
 }
 
 /**
+ * The routing groups, from the JSON text a settings file (or the environment)
+ * holds. An entry that does not validate is reported and skipped, and the
+ * entries around it survive — one bad line must not take the other groups
+ * down with it. A repeated id is refused after the first: two groups under one
+ * virtual-model id would make the registration order the routing decision.
+ */
+export function parseGroupsValue(text: string): {
+  readonly groups?: GroupDefinition[];
+  readonly rejected: readonly string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { rejected: ["groups is not valid JSON"] };
+  }
+  if (!Array.isArray(parsed)) return { rejected: ["groups is not a JSON array"] };
+
+  const groups: GroupDefinition[] = [];
+  const rejected: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of parsed.entries()) {
+    const result = parseGroup(entry);
+    if (result.group === undefined) {
+      rejected.push(`groups[${index}]: ${result.reason}`);
+      continue;
+    }
+    if (seen.has(result.group.id)) {
+      rejected.push(`groups[${index}]: the id "${result.group.id}" is already used by another group`);
+      continue;
+    }
+    seen.add(result.group.id);
+    groups.push(result.group);
+  }
+  return { groups, rejected };
+}
+
+/**
  * One setting change, validated. The wizard calls this; so would a hand edit
- * that wants its line checked.
+ * that wants its line checked. A successful change may carry notes the caller
+ * still has to show — a groups value keeps its good entries and reports the
+ * ones it dropped.
  */
 export function editSetting(
   settings: Settings,
   key: SettingKey,
   raw: string,
-): { readonly ok: true; readonly settings: Settings } | { readonly ok: false; readonly reason: string } {
+): { readonly ok: true; readonly settings: Settings; readonly notes?: readonly string[] } | { readonly ok: false; readonly reason: string } {
   switch (key) {
     case "cooldown": {
       const value = parseDuration(raw);
@@ -287,6 +368,25 @@ export function editSetting(
       if (models === undefined) return { ok: false, reason: `not provider/id: ${rejected.join(", ")}` };
       const field = key === "models" ? "allowedModels" : key === "pinned" ? "pinnedModels" : "excludedModels";
       return { ok: true, settings: { ...settings, [field]: models } };
+    }
+    case "strategy": {
+      const value = parseStrategy(raw.trim());
+      if (value === undefined) {
+        return { ok: false, reason: `strategy is not one of ${STRATEGIES.join(", ")}: ${raw.trim()}` };
+      }
+      return { ok: true, settings: { ...settings, strategy: value } };
+    }
+    case "affinity": {
+      const value = parseAffinity(raw.trim());
+      if (value === undefined) {
+        return { ok: false, reason: `affinity is not one of ${AFFINITIES.join(", ")}: ${raw.trim()}` };
+      }
+      return { ok: true, settings: { ...settings, affinity: value } };
+    }
+    case "groups": {
+      const { groups, rejected } = parseGroupsValue(raw);
+      if (groups === undefined) return { ok: false, reason: rejected.join("; ") };
+      return { ok: true, settings: { ...settings, groups }, notes: rejected };
     }
   }
 }
@@ -326,8 +426,10 @@ export function parseSettings(text: string): ParsedSettings {
             ? value
               ? "on"
               : "off"
-            : Array.isArray(value) && value.every((entry) => typeof entry === "string")
-              ? value.join(", ")
+            : Array.isArray(value)
+              ? value.every((entry) => typeof entry === "string")
+                ? value.join(", ")
+                : JSON.stringify(value)
               : undefined;
     if (text === undefined) {
       notes.push(`ignored "${key}": expected a number, a string, a boolean, or a list of strings`);
@@ -340,6 +442,7 @@ export function parseSettings(text: string): ParsedSettings {
     }
     settings = edited.settings;
     applied.push(descriptor.key);
+    for (const note of edited.notes ?? []) notes.push(`ignored "${key}": ${note}`);
   }
   return { settings, notes, applied };
 }
@@ -349,6 +452,7 @@ const SETTING_FIELDS = {
   cooldown: "cooldownMs", vision: "preferVision", status: "statusLine",
   origins: "excludedOrigins", providers: "excludedProviders",
   models: "allowedModels", pinned: "pinnedModels", excluded: "excludedModels",
+  strategy: "strategy", affinity: "affinity", groups: "groups",
 } as const satisfies Record<SettingKey, keyof Settings>;
 
 /** Copy one field from `source` onto `target`. */
@@ -373,6 +477,19 @@ export function routingChanged(before: Settings, after: Settings): boolean {
     const field = SETTING_FIELDS[key];
     const previous = before[field];
     const next = after[field];
+    // Group definitions are records parsed fresh from every file read, so they
+    // never compare by identity: their content is the decision, compared as
+    // [id, match, name, strategy, affinity] tuples sorted by id, so the same
+    // groups in a different key order are the same setting.
+    if (field === "groups") {
+      const beforeGroups = before.groups.map((group) =>
+        JSON.stringify([group.id, group.match, group.name, group.strategy, group.affinity]),
+      ).sort();
+      const afterGroups = after.groups.map((group) =>
+        JSON.stringify([group.id, group.match, group.name, group.strategy, group.affinity]),
+      ).sort();
+      return beforeGroups.length !== afterGroups.length || beforeGroups.some((value, index) => value !== afterGroups[index]);
+    }
     return Array.isArray(previous) && Array.isArray(next)
       ? previous.length !== next.length || previous.some((value, index) => value !== next[index])
       : previous !== next;
@@ -430,6 +547,7 @@ export function resolveSettings(sources: SettingsSources = {}): ParsedSettings {
     }
     settings = edited.settings;
     applied.push(descriptor.key);
+    for (const note of edited.notes ?? []) notes.push(`ignored ${descriptor.envVar}: ${note}`);
   }
 
   return { settings, notes, applied };
@@ -446,6 +564,15 @@ export function serializeSettings(settings: Settings): string {
     models: [...settings.allowedModels],
     pinned: [...settings.pinnedModels],
     excluded: [...settings.excludedModels],
+    strategy: settings.strategy,
+    affinity: settings.affinity,
+    groups: settings.groups.map(({ id, name, match, strategy, affinity }) => ({
+      id,
+      name,
+      match,
+      ...(strategy === undefined ? {} : { strategy }),
+      ...(affinity === undefined ? {} : { affinity }),
+    })),
   };
   return `${JSON.stringify(body, null, 2)}\n`;
 }
@@ -475,6 +602,7 @@ export const SUBCOMMANDS: readonly Subcommand[] = [
   { value: "set", description: "Set one value without the window: set <key> <value>" },
   { value: "reset", description: "Write the default settings" },
   { value: "next", description: "Take the current candidate out for one cooldown window" },
+  { value: "explain", description: "Show why the last request went where it went" },
   { value: "reload", description: "Rebuild the candidate list after a score or credential change" },
 ];
 
@@ -483,6 +611,9 @@ const SUGGESTED_VALUES: Partial<Record<SettingKey, readonly string[]>> = {
   cooldown: ["5m", "15m", "1h", "300000", "off"],
   vision: ["on", "off"],
   status: ["on", "off"],
+  // The strategies and affinities a settings file may name, from their owners.
+  strategy: [...STRATEGIES],
+  affinity: [...AFFINITIES],
 };
 
 /**

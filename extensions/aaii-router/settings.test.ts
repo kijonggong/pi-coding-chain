@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   DEFAULT_COOLDOWN_MS,
+  DEFAULT_EXCLUDED_PROVIDERS,
   DEFAULT_SETTINGS,
   PROJECT_KEYS,
   SETTINGS,
@@ -24,6 +25,7 @@ import {
   editSetting,
   loadSettings,
   milliseconds,
+  parseGroupsValue,
   parseModelEntries,
   parseDuration,
   parseList,
@@ -32,6 +34,7 @@ import {
   parseToggle,
   readSettingsFile,
   resolveSettings,
+  routingChanged,
   saveSettings,
   serializeSettings,
 } from "./settings.ts";
@@ -40,7 +43,10 @@ test("a fresh install has every setting at its default", () => {
   assert.deepEqual(resolveSettings({}), { settings: DEFAULT_SETTINGS, notes: [], applied: [] });
   assert.equal(DEFAULT_SETTINGS.cooldownMs, DEFAULT_COOLDOWN_MS);
   assert.deepEqual(DEFAULT_SETTINGS.excludedOrigins, ["http://127.0.0.1:4000"]);
-  assert.deepEqual(DEFAULT_SETTINGS.excludedProviders, []);
+  // The chain calls model hosts directly: routing gateways and resellers
+  // (magpie, openrouter) are out by default, and a settings file can re-admit them.
+  assert.deepEqual(DEFAULT_SETTINGS.excludedProviders, ["magpie", "openrouter"]);
+  assert.equal(DEFAULT_SETTINGS.excludedProviders, DEFAULT_EXCLUDED_PROVIDERS);
 });
 
 test("reads a duration in the units an operator would write", () => {
@@ -217,6 +223,9 @@ test("writes a file it can read back", () => {
     "models",
     "pinned",
     "excluded",
+    "strategy",
+    "affinity",
+    "groups",
   ]);
   assert.ok(text.endsWith("\n"));
 });
@@ -307,6 +316,120 @@ test("project files cannot change pins or model exclusions and older files need 
   assert.deepEqual(old.notes, []);
   assert.deepEqual(old.settings.pinnedModels, []);
   assert.deepEqual(old.settings.excludedModels, []);
+});
+
+test("strategy and affinity are word-validated everywhere a value can enter, and the environment overrides", () => {
+  assert.deepEqual(editSetting(DEFAULT_SETTINGS, "strategy", "rotate"), {
+    ok: true,
+    settings: { ...DEFAULT_SETTINGS, strategy: "rotate" },
+  });
+  const badStrategy = editSetting(DEFAULT_SETTINGS, "strategy", "smart");
+  assert.equal(badStrategy.ok, false);
+  assert.match(!badStrategy.ok ? badStrategy.reason : "", /strategy is not one of/);
+  const badAffinity = editSetting(DEFAULT_SETTINGS, "affinity", "strict");
+  assert.equal(badAffinity.ok, false);
+  assert.match(!badAffinity.ok ? badAffinity.reason : "", /affinity is not one of/);
+
+  const file = JSON.stringify({ strategy: "least-used", affinity: "session" });
+  assert.deepEqual(parseSettings(file).settings.strategy, "least-used");
+  assert.equal(parseSettings(file).settings.affinity, "session");
+  assert.deepEqual(parseSettings(file).notes, []);
+
+  const fromEnv = resolveSettings({ global: file, env: { PI_AAII_ROUTER_STRATEGY: "free-first" } });
+  assert.equal(fromEnv.settings.strategy, "free-first");
+  const bad = resolveSettings({ global: file, env: { PI_AAII_ROUTER_AFFINITY: "off" } });
+  assert.equal(bad.settings.affinity, "session", "a bad override must not erase the configured value");
+  assert.match(bad.notes[0], /ignored PI_AAII_ROUTER_AFFINITY: affinity is not one of/);
+
+  // The file form round-trips both words.
+  const settings = { ...DEFAULT_SETTINGS, strategy: "manual" as const, affinity: "turn" as const };
+  assert.deepEqual(parseSettings(serializeSettings(settings)).settings, settings);
+});
+
+test("groups parse from JSON: a bad entry is noted, the good entries survive", () => {
+  const parsed = parseSettings(JSON.stringify({
+    groups: [
+      { id: "qwen", match: "qwen3-8-max" },
+      { id: "aaii", match: "glm-5-3-flash" },
+      { id: "bad id", match: "glm-5-3-flash" },
+    ],
+  }));
+  // A file's groups value replaces the whole list — the file is the source.
+  assert.deepEqual(parsed.settings.groups.map((group) => group.id), ["qwen"]);
+  assert.deepEqual(parsed.notes, [
+    'ignored "groups": groups[1]: the id "aaii" is reserved for the full chain',
+    'ignored "groups": groups[2]: id is not a model id: bad id',
+  ]);
+  assert.deepEqual(parsed.applied, ["groups"]);
+});
+
+test("groups refuse a repeated id and groups that are not an array", () => {
+  const duplicate = parseGroupsValue(JSON.stringify([
+    { id: "glm", match: "glm-5-3-flash" },
+    { id: "glm", match: "glm-5-2-flash" },
+  ]));
+  assert.deepEqual(duplicate.groups?.map((group) => group.id), ["glm"]);
+  assert.deepEqual(duplicate.rejected, ['groups[1]: the id "glm" is already used by another group']);
+
+  assert.match(parseGroupsValue("[not json").rejected[0], /not valid JSON/);
+  assert.match(parseGroupsValue(JSON.stringify({ id: "glm", match: "glm-5-3-flash" })).rejected[0], /not a JSON array/);
+
+  // Through parseSettings a groups object is not a shape the coercion can
+  // even hand over; the message says so before validation runs.
+  const refused = parseSettings(JSON.stringify({ groups: { id: "glm", match: "glm-5-3-flash" } }));
+  assert.deepEqual(refused.settings.groups, DEFAULT_SETTINGS.groups);
+  assert.match(refused.notes[0], /ignored "groups": expected a number, a string, a boolean, or a list of strings/);
+});
+
+test("groups are a redirect setting: a project file may not set them, the environment can", () => {
+  const settings = { ...DEFAULT_SETTINGS, groups: [{ id: "qwen", name: "Qwen fallback", match: "qwen3-8-max" }] };
+  const resolved = resolveSettings({
+    global: serializeSettings(settings),
+    project: JSON.stringify({ groups: [{ id: "own", match: "glm-5-3-flash" }] }),
+  });
+  assert.deepEqual(resolved.settings.groups, settings.groups, "the project's groups never land");
+  assert.deepEqual(resolved.notes, ['ignored project setting "groups": a project may not change where requests go']);
+  assert.ok(!PROJECT_KEYS.includes("groups"));
+
+  const fromEnv = resolveSettings({ env: { PI_AAII_ROUTER_GROUPS: JSON.stringify([{ id: "qwen", match: "qwen3-8-max" }]) } });
+  assert.deepEqual(fromEnv.settings.groups, [{ id: "qwen", name: "qwen3-8-max fallback", match: "qwen3-8-max" }]);
+});
+
+test("groups round-trip through the file, keeping a group's own strategy and affinity", () => {
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    strategy: "rotate" as const,
+    groups: [
+      { id: "glm", name: "GLM fallback", match: "glm-5-3-flash", strategy: "free-first" as const },
+      { id: "qwen", name: "Qwen fallback", match: "qwen3-8-max", affinity: "turn" as const },
+      { id: "deepseek", name: "DeepSeek fallback", match: "deepseek-v4-1-flash" },
+    ],
+  };
+  const round = parseSettings(serializeSettings(settings));
+  assert.deepEqual(round.settings, settings);
+  assert.deepEqual(round.notes, []);
+});
+
+test("the same groups saved in a different key or array order do not bump the chain epoch", () => {
+  const groups = [
+    { id: "glm", name: "GLM fallback", match: "glm-5-3-flash", strategy: "free-first" as const },
+    { id: "qwen", name: "Qwen fallback", match: "qwen3-8-max" },
+  ];
+  const settings = { ...DEFAULT_SETTINGS, groups };
+  // Same content, every group's keys written in another order and the array
+  // reversed: the comparison is over the tuples' content, not their spelling.
+  const reordered = { ...DEFAULT_SETTINGS, groups: [
+    { match: "qwen3-8-max", id: "qwen", name: "Qwen fallback" },
+    { strategy: "free-first" as const, match: "glm-5-3-flash", id: "glm", name: "GLM fallback" },
+  ] };
+  assert.equal(routingChanged(settings, reordered), false);
+  // The name is part of a group's content: renaming a group is a change, and
+  // it resets the remembered candidate `auto` affinity would resume.
+  const renamed = { ...DEFAULT_SETTINGS, groups: [
+    { id: "glm", name: "GLM fallback renamed", match: "glm-5-3-flash", strategy: "free-first" as const },
+    { id: "qwen", name: "Qwen fallback", match: "qwen3-8-max" },
+  ] };
+  assert.equal(routingChanged(settings, renamed), true);
 });
 
 test("shows one line per setting, marking the ones the environment holds", () => {

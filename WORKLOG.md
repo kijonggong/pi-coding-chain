@@ -173,3 +173,162 @@ head  code-2-nvidia-deepseek-v4.1-flash         39.5 (daily)
 ```
 
 미채점은 이제 code-7 하나뿐입니다. `node --test extensions/` → **160개 중 160개 통과**.
+
+## 9. 추가: Magpie routing 채택 기능을 aaii-router에 접붙임 (groups·strategy·affinity·explain·에스컬레이션)
+
+작성일: 2026-10-31 · 설계 `_research/routing-groups-design.md`, 처분 근거
+`_research/routing-extension-survey.md`, 구현 보고 `_research/groups-impl-report.md`.
+
+### 9.1 바꾼 책임 소재와 구조
+
+routes.ts(하드코딩 family route 2개 + full chain)를 groups.ts(설정 파일이 출처인
+라우팅 그룹)로 대체하고, 전략·친화도·결정 설명·반복 실패 에스컬레이션을 각자의
+책임 자리에 두었습니다: 그룹 정의와 매처는 `groups.ts`, 분배 전략은 `strategy.ts`,
+친화도 선택은 `cooldown.ts`의 `chooseTurnCandidate`, 실패 창 연장은
+`cooldown.ts`의 `rememberFailure`, 결정 기록·표시는 `explain.ts`(신설) + `index.ts`
+기록, 설정 읽기·검증은 `settings.ts`, 등록·명령·조율은 `index.ts`.
+
+### 9.2 더한 것 / 뺀 것
+
+**더한 것**: `groups.ts`·`strategy.ts`·`explain.ts` 신설(각각 시험 파일 포함),
+settings 키 `strategy`·`affinity`·`groups`(환경변수 `PI_AAII_ROUTER_STRATEGY/
+_AFFINITY/_GROUPS`), `/aaii-router explain`, 쿨다운 반복 실패 창 연장(상한 4배)과
+`hits` 표기, `chooseTurnCandidate`의 affinity 매개변수.
+
+**뺀 것**: `routes.ts`·`routes.test.ts` 삭제(2.3). `ROUTES`·`RouteDefinition`·
+`candidatesForRoute` 소멸 — 소스 참조 0건 확인. `strategy.ts`의 `takeHead`는
+fresh-turn 경로가 `chooseTurnCandidate`의 결과를 직접 쓰면서 불필요해져
+`recordServed`(least-used served 카운트만)로 대체·삭제. `applyStrategy`의
+`excludedModels` 매개변수는 `applyChainSettings`가 이미 처리하는 것의 재적용이라
+만들지 않았고(`manual`용 `pinnedModels`만), 이로써 호출 지점(`index.ts` routeFor·
+next)은 전부 groups API로 함께 고쳤습니다. `settings.ts`에는 `routingChanged`의
+groups identity 비교 버그를 고치면서 3키를 추가했습니다.
+
+**처분 라운드에서 추가로 뺀 것(§9.8)**: `RouterState.strategyName` 필드·읽기·쓰기
+소멸 — 설정보다 state의 옛 전략이 이기는 결함(C-2). 등록 팩토리의 `parseGroup`
+재검증 루프·`registrationNotes` 소멸 — 도달 불가능한 과잉 방어(2.7).
+
+### 9.3 3절 형태를 쓴 곳
+
+없음. 대체된 routes 경로는 지웠고, 같은 일을 하는 길은 하나
+(`groups.ts` → `index.ts`)뿐입니다. 등록 팩토리의 `parseGroup` 재검증 루프는
+처분 라운드에서 도달 불가능한 과잉 방어(2.7)로 확인돼 제거했습니다 — `groups` 값은
+항상 `parseGroupsValue`를 통과하므로 `parsed.settings.groups`를 그대로 등록합니다.
+
+### 9.4 시험 계약과 mutation check
+
+- `groups.test.ts`: 매처는 옛 `routes.test.ts`의 계약을 그대로 이어받습니다
+  (접두·접미·변이 안, 다른 버전 밖, `:free` 접미 처리) + 그룹별 후보 단축과 tier
+  정렬, `parseGroup` 검증(id 예약·비-canonical match·잘못된 strategy/affinity 거부,
+  name 기본값), DEFAULT_GROUPS.
+- `strategy.test.ts`: 전략별 기대 순서, rotate의 턴 진행과 wrap, retry 재계산이
+  실패한 턴의 순서를 재현하는 것(저장 카운터 −1), rotate 오프셋 note, least-used의
+  served 카운트와 동률 시 체인 순서, free-first의 티어·점수 전체 동률 label
+  tiebreak, manual의 pin 없음 note와 강등, exclusion이 모든 전략에 적용(전략은
+  주어진 목록만 재정렬).
+- `cooldown.test.ts` 확장: 창 안 재실패 → until 연장 + hits 증가, 상한 4배, 창 만료
+  뒤 실패는 새 창, describeCooldown 반복 표기, affinity 3종.
+- `settings.test.ts` 확장: strategy/affinity 단어 검증 + env override, groups JSON
+  파싱(잘못된 항목 note + 좋은 항목 생존, 중복 id·aaii 예약 거부), groups가
+  PROJECT_KEYS 밖, serialize→parse 라운드트립. 기존 "writes a file it can read back"
+  테스트의 직렬화 키 목록 단정은 **기준 완화가 아니라 계약 갱신**입니다 — 파일이 이제
+  `strategy`·`affinity`·`groups` 3키를 더 쓰기 때문입니다.
+- `index.test.ts`: 하네스 모듈에 groups/strategy/explain 추가(routes 제거), 등록
+  그룹 검증, explain 서브커맨드, affinity=turn이 매 새 턴 선두로 돌아오는 것.
+  기존 계약 유지: `[aaii-router/glm-5.3-flash] no eligible model` 문구, 상태줄
+  `aaii → label` 형식.
+
+**mutation check(예비)**: ① rotate 오프셋 +1 → 3개 실패, ② least-used 내림차순 →
+1개 실패, ③ manual 강등 note 제거 → 1개 실패, ④ 창 연장 상한 제거 → 1개 실패,
+⑤ 만료 창의 hits 재사용 → 1개 실패, ⑥ affinity=turn 무시 → 2개 실패, ⑦ aaii
+예약 해제 → 2개 실패, ⑧ routingChanged identity 비교(실제 발견 버그) → 2개 실패.
+모두 원복 후 전체 통과 재확인. 실제 mutation check는 별도 레인에서 다시 돌아갑니다.
+
+### 9.5 동작 보존 / 의미 변경
+
+**의미 변경**: 기본 2개 family route가 하드코딩에서 설정 파일 출처로 바뀌었고(기본
+시드가 같아 관찰 동작은 동일), rotate·least-used·manual 전략과 session/turn
+친화도, explain, 창 연장은 새 동작입니다. 연장 상한 4배는 무한 연장이 한 모델을
+사실상 영구 제외하기 때문입니다. **동작 보존**: order 전략(기본)은 기존 정책 순서
+그대로이며 coding-fallback과의 체인 일치가 변하지 않습니다. continuation/retry의
+stickiness와 쿨다운 1창 동작도 그대로입니다.
+
+### 9.6 검증
+
+`PI_OFFLINE=1 PI_CODING_FALLBACK_FREE_REFRESH=off node --test extensions/*/*.test.ts`
+→ **280개 중 280개 통과**. `grep -rn "routes.ts|RouteDefinition|candidatesForRoute|
+ROUTES" extensions/aaii-router` → 소스 0건(README의 시험 서술은 groups.test.ts로
+갱신).
+
+### 9.7 열린 질문 (설계가 애매했던 결정과 선택)
+
+- `groups` 부분 생존: 파일의 groups 배열에서 일부 항목만 잘못돼도 좋은 항목을
+  적용하고 note로 남기기로 했습니다(설계 §8의 "note + 생존"을 파일·환경 경로까지
+  확장). 전부 무효면 빈 목록이 적용됩니다 — operator가 굳이 비운 것이므로.
+- 전략 적용 시점: 회전은 새 유저 턴에서만 전진하고, retry는 저장된 카운터에서 1을
+  되돌려 실패한 턴이 출발한 순서를 걷습니다(§9.8 R-P0-1).
+
+### 9.8 처분 라운드: 독립 리뷰·mutation 재검증 (2026-10-31)
+
+독립 리뷰 11건 + 코디네이터 확인 8건을 정본 절차 3단계로 처분했습니다
+(`_research/dispositions-groups.md`): **수정 13 / 기각 5 / 부채 기록 2**, mutation
+18변이(16 kill / 2 survive). 반영한 "수정" 항목:
+
+- **R-P0-1 + R-P2-1**: retry가 실패한 턴과 다른 순서를 걸어 남은 후보가 있어도
+  "chain exhausted"로 죽는 결함 — retry 경로가 저장 state.turns에서 1을 되돌린
+  상태로 순서를 재계산. index.test.ts가 실제 생산자→소비자 연결(fresh turn의 반환
+  state를 그대로 retry 입력으로)을 재현하고, strategy.test.ts의 재주입 전제 시험을
+  실제 단정(저장 카운터 −1 재계산)으로 교체.
+- **C-2**: `strategyName` 필드·읽기·쓰기 제거 — 전략은 매 요청
+  `groupStrategy(group, settings)`로 결정해 `/aaii-router set strategy`가 즉시
+  반영된다. continuation·retry의 전략 카운터 보존 구조는 유지.
+- **R-P1-1**: `DecisionReason` type import 추가. **R-P1-2**: groups 부분 거부
+  note를 dialog·`set` 두 경로에서 notify.
+- **R-P2-2**: explain.ts의 죽은 `chosen` 매개변수·읽는 곳 없는 `when` 필드 제거,
+  `lastDecision` 주석을 실제 소비자 기준으로 교정.
+- **R-P2-3**: 등록 팩토리 재검증 제거(§9.3). **R-P2-4**: retry·continuation도
+  실제 응답자로 `recordServed`(stick의 단일 커밋 지점에서 적용) — least-used가
+  설계 §3대로 실제 응답한 후보를 센다. rotate의 turns는 보존.
+- **R-P2-5**: rotate 오프셋 note(`rotate: starting at position N`) — README·설계가
+  주장한 내용이 실제가 됨. **R-P2-6**: routingChanged groups 비교를 [id, match,
+  name, strategy, affinity] 튜플 정규화 + id 정렬로 변경(키 순서 무관, M9 시험 유지).
+  **R-P2-7**: 미사용 `preferred`·`FULL_CHAIN_ID` import 제거,
+  `containsImage` 1회 계산.
+- **IL-TYP-301**: `group.match!` 단언 제거(지역 변수 narrowing).
+  **IL-ARC-205**: settings.ts의 strategy/affinity 나열을 strategy.ts·cooldown.ts의
+  `STRATEGIES`·`AFFINITIES`에서 파생(단일 출처), groups.ts의 거부 문구도 동일.
+- **R-P2-8 + M-E3 + M-E8**: 시험 보강 — per-group strategy/affinity override
+  (index.test.ts 2건), coolingDescriptions 임박순 정렬(explain.test.ts 신설),
+  free-first 전체 동률 label tiebreak(strategy.test.ts).
+
+**E3/E8 mutation 재확인**: 임시 사본에서 ① coolingDescriptions의 until 정렬 제거,
+② free-first label tiebreak 제거(`localeCompare` → `return 0`)를 다시 만들자 새
+시험이 각각 실패 — 둘 다 **kill**. 사본은 삭제했고 원본 트리는 변이 없음.
+
+**재검증**: `PI_OFFLINE=1 PI_CODING_FALLBACK_FREE_REFRESH=off node --test
+extensions/*/*.test.ts` → **287개 중 287개 통과**. `grep strategyName
+extensions/aaii-router/*.ts` → 0건, `grep registrationNotes index.ts` → 0건.
+설계 문서(`_research/routing-groups-design.md`)의 strategyName·least-used 집계·
+재검증 문구도 실제에 맞게 갱신.
+
+### 9.9 aggregator 공급자 기본 제외 + 실물 검증 (11-01)
+
+**실물 검증(완료 정의 3단계)**: pi 1.4.0 RPC 모드에서 작업 트리 확장을 단독 로드해 실제
+요청 8턴 소비. rotate+turn 전략에서 실제 응답 모델이 턴마다 순환(magpie/auto →
+magpie/nvidia), family 그룹은 42 후보를 glm family 7개로 단축, manual은 pin만 순회,
+죽은 로컬 provider를 pin 선두에 두니 연결 실패 → `retry after failure`로 다음 후보에
+폴백하고 실패 후보가 `cooling 5m, error`로 기억됨. explain이 전 과정을 기록. 원문
+`_research/rpc-a-run-{a,b,d,g}.jsonl`.
+
+**aggregator 기본 제외(사용자 결정)**: "Magpie, openrouter 같은 공급자의 모델은 이 체인의
+후보에서 제외" — 라우터를 라우터의 후보로 넣는 우회를 없앤다.
+
+- 더한 것: `candidates.ts`의 `DEFAULT_EXCLUDED_PROVIDERS = ["magpie", "openrouter"]`(신설
+  상수, 단일 출처). `DEFAULT_SETTINGS.excludedProviders`가 재사용. 설정 파일에 빈 값을 쓰면
+  되돌릴 수 있다.
+- 뺀 것: 기본값의 빈 제외 목록(대체됨).
+- 라이브 설정(`~/.pi/agent/aaii-router.json`)의 `providers`에 `magpie` 추가(사용자 설정,
+  백업 `aaii-router.json.bak-20261101`). openrouter는 이미 제외 중.
+- 시험: settings.test.ts의 기본값 단정을 새 계약으로 갱신(완화 아님) — 291개 중 291개 통과.
+- README: 설정 표의 `providers` 기본값·이유 갱신.
+- 의미 변경: 기본 후보 집합이 줄어든다. magpie/openrouter를 쓰던 세션은 설정으로 되돌려야 한다.

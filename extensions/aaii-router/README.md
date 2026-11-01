@@ -1,12 +1,19 @@
 # aaii-router
 
-A Pi extension that registers three virtual models under a `fallback`
-provider: `fallback/aaii`, `fallback/deepseek-v4.1-flash` and
-`fallback/glm-5.3-flash`. Each picks a physical model from the providers this
-Pi already has credentials for, and steps to the next one when a request
-fails. `fallback/aaii` walks every candidate; the two family routes walk only
-the candidates that serve their model family. No LiteLLM proxy is involved, so
-they replace the `fallbacks` matrix rather than feeding it.
+A Pi extension that registers routing groups as virtual models under a
+`fallback` provider. `fallback/aaii` is always there: it walks every candidate
+the providers this Pi already has credentials for, in the policy order, and
+steps to the next one when a request fails. Alongside it, the settings file's
+`groups` register one virtual model per family — the seed ships with
+`fallback/deepseek-v4.1-flash` and `fallback/glm-5.3-flash`, which walk only the
+candidates that serve their model family. No LiteLLM proxy is involved, so they
+replace the `fallbacks` matrix rather than feeding it.
+
+Each group can also name its own **strategy** (how its requests are spread over
+its candidates) and **affinity** (how eagerly a new turn returns to the model
+the session is on); `/aaii-router explain` says why the last request went where
+it went, and a model that keeps failing inside its cooldown window has its
+window stretched, up to a cap.
 
 ## The problem it solves
 
@@ -19,7 +26,10 @@ missing piece was a model that answers with a different model per request.
 Pi's own automatic retry is not a substitute: it re-sends the *same* model and
 then gives up. Model-to-model fail-over is what this extension adds.
 
-## Routes
+## Groups
+
+A group is a named filter over the automatically collected candidate list,
+registered as one virtual model:
 
 | Model | `/model` shows | Candidates it walks |
 |---|---|---|
@@ -27,12 +37,40 @@ then gives up. Model-to-model fail-over is what this extension adds.
 | `fallback/deepseek-v4.1-flash` | DeepSeek V4.1 Flash fallback (providers direct) | only the candidates serving the DeepSeek V4.1 Flash family |
 | `fallback/glm-5.3-flash` | GLM 5.3 Flash fallback (providers direct) | only the candidates serving the GLM 5.3 Flash family |
 
-A family route is the same walk on a shorter list: the AAII score order, the
+The table above is the seed `serializeSettings` writes into a fresh settings
+file; **the file is the source of truth**, not the code. A group entry is
+`{ id, name?, match, strategy?, affinity? }`:
+
+```json
+{
+  "groups": [
+    { "id": "glm-5.3-flash", "name": "GLM 5.3 Flash fallback (providers direct)", "match": "glm-5-3-flash" },
+    { "id": "qwen-coder", "match": "qwen3-coder", "strategy": "rotate", "affinity": "turn" }
+  ]
+}
+```
+
+`match` is a canonical family key (below) — a filter over the candidates the
+registry already serves, never a hand-written member list. `aaii` is a reserved
+id: it is the full chain and always registered, and a file entry with that id is
+refused with a note. Entries that do not validate are also refused with a note,
+and the entries around them survive. Because `registerVirtualModel` runs once
+per load, **adding or removing a group id takes effect after Pi's `/reload`**;
+the matchers, strategies and affinities are read from the settings per request,
+so editing a value takes effect on the next request. Saving the same groups in
+a different key or array order is not a change. Any real change to a group
+definition — including a display-only `name` rename — counts, because the
+comparison covers the whole definition: it raises the chain epoch, which resets
+the remembered candidate `auto` affinity would otherwise resume, so the next
+new turn starts from the head again. Renaming is safe, but it restarts
+stickiness.
+
+A family group is the same walk on a shorter list: the AAII score order, the
 quota-tier tie-break, the cooldown failure memory and the stickiness on a
 continuation all carry over unchanged, and the `/aaii-router` command, its
-subcommands and the settings file are shared by all three routes. Errors keep
-their tag per route: `fallback/aaii` answers with `[aaii-router]`, a family
-route with `[aaii-router/<id>]` — `[aaii-router/glm-5.3-flash] no eligible
+subcommands and the settings file are shared by every group. Errors keep
+their tag per group: `fallback/aaii` answers with `[aaii-router]`, a family
+group with `[aaii-router/<id>]` — `[aaii-router/glm-5.3-flash] no eligible
 model: no chat model with credentials serves the glm-5.3-flash family, or the
 settings excluded it`.
 
@@ -46,7 +84,7 @@ tier suffix (`glm-5.3-flash-free`) and supplier prefixes or suffixes
 `GLM-5.3-Flash-Trial`) are all in their family. A different version or a
 different variant is not: `deepseek-v4-flash` (no `.1`), `glm-5.2`, `glm-5.1`
 and `glm-5.35` stay out, and so does the non-flash `glm-5.3` on the flash
-route — `zaicoding_glm-5.3` is a different family, reachable only through
+group — `zaicoding_glm-5.3` is a different family, reachable only through
 `fallback/aaii`.
 
 ## Ordering policy
@@ -149,6 +187,61 @@ Two rules keep a window from becoming a wall:
 The window is also what `/aaii-router next` uses to move the session off a model
 that is degraded but not failing.
 
+### Repeated failures
+
+A candidate that fails again **inside its own window** has that window re-opened
+from now and stretched by another window, and the failure counted. The stretch
+is capped at four windows (`COOLDOWN_MAX_STRETCH`), because an unbounded one
+would bench a model for the rest of the session. A failure after the window
+closed starts a fresh window instead of stretching the old one, so a model that
+fails once a day is never punished for it. The repeat shows in the report and
+in `/aaii-router explain` as `cooling 20m, rate-limit, 3 failures`.
+
+## Distribution strategy
+
+A group's `strategy` (or the global `strategy` setting, for groups that name
+none) decides how its requests are spread over its candidates, after the chain
+order, pins, exclusions and the image adjustment have had their say:
+
+| Value | Behaviour |
+|---|---|
+| `order` (default) | the policy order as is — what `coding-fallback` composes |
+| `free-first` | the free quota tier first, then the score order inside each tier |
+| `rotate` | each new user turn starts at the next candidate, wrapping around — daily accounts in turn |
+| `least-used` | the candidate that has served the fewest requests this session first; ties keep the chain order |
+| `manual` | only the pinned models are walked; with nothing pinned it falls back to `order` and says so |
+
+Pins and exclusions are applied before the strategy (and `manual` keeps the
+pin order `applyChainSettings` produced), so an excluded model is out of every
+strategy. The image adjustment runs first, because seeing the request is a
+capability constraint and the strategy is only a distribution preference. The
+rotation advances once per user turn: a retry inside a turn keeps the turn's
+order and steps past the failure instead.
+
+## Turn affinity
+
+A group's `affinity` (or the global `affinity` setting) decides how eagerly a
+new user turn returns to the model the session is on:
+
+| Value | Behaviour |
+|---|---|
+| `auto` (default) | the remembered candidate resumes while it is usable and the chain configuration is unchanged — the chain only moves on failure |
+| `session` | it keeps resuming even after a chain configuration change; only a failure moves the session |
+| `turn` | every new user turn starts from the head of the order — the cheapest way to keep a big-context session off a busy model |
+
+## Explain
+
+```text
+/aaii-router explain
+```
+
+The last routing decision, in words: which candidate was chosen and why (fresh
+turn, continuation kept the model, retry after a failure, or nothing eligible),
+the order that was considered (`*` on the chosen one, capped at ten), the
+candidates that were skipped as cooling and their windows, and the adjustments
+that were applied (image demotion, pin demotion, rotation). One decision is kept
+in memory — a new session starts with `no routing decision yet`.
+
 ## Images
 
 Pi substitutes placeholders for a model without image support, so a screenshot
@@ -160,8 +253,8 @@ order still decides inside each group.
 ## Visibility
 
 The footer shows the physical candidate the session is on and how many
-candidates are cooling, prefixed by the route id rather than a provider name:
-`aaii → commandcode/Qwen3.8-Max · 2/9 cooling` on the full-chain route,
+candidates are cooling, prefixed by the group id rather than a provider name:
+`aaii → commandcode/Qwen3.8-Max · 2/9 cooling` on the full-chain group,
 `deepseek-v4.1-flash → nvidia/deepseek-ai/deepseek-v4.1-flash` or
 `glm-5.3-flash → zcode/GLM-5.3-Flash` on a family one. The write is wrapped,
 because the status line is decoration and the route is
@@ -206,10 +299,13 @@ from the operator's configuration, not from a table in the extension.
 | `vision` — put candidates that can see an image ahead of ones that cannot | `on` | `PI_AAII_ROUTER_VISION` |
 | `status` — footer line with the active candidate and the cooling count | `on` | `PI_AAII_ROUTER_STATUS` |
 | `origins` — origins no candidate may use | the LiteLLM proxy | `PI_AAII_ROUTER_EXCLUDE_ORIGINS` |
-| `providers` — providers to leave out of the chain, e.g. `openrouter` | none | `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` |
+| `providers` — providers to leave out of the chain | `magpie`, `openrouter` (routing gateways and resellers — this chain calls model hosts directly; an empty value re-admits every provider) | `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` |
 | `models` — limit a provider to the `provider/id` entries listed for it | none | `PI_AAII_ROUTER_ALLOW_MODELS` |
 | `pinned` — candidate labels to try first, in this order (`provider/id`) | none | `PI_AAII_ROUTER_PINNED` |
 | `excluded` — candidate labels to leave out of the chain (`provider/id`) | none | `PI_AAII_ROUTER_EXCLUDE_MODELS` |
+| `strategy` — how a group spreads its requests; a group's own `strategy` wins | `order` | `PI_AAII_ROUTER_STRATEGY` |
+| `affinity` — how eagerly a new turn returns to the model the session is on; a group's own `affinity` wins | `auto` | `PI_AAII_ROUTER_AFFINITY` |
+| `groups` — the routing groups as a JSON array of `{ id, name?, match, strategy?, affinity? }`; `aaii` is reserved | the two family groups | `PI_AAII_ROUTER_GROUPS` |
 
 Settings are read from three sources, in this order:
 
@@ -325,6 +421,7 @@ says so and names the scriptable form instead:
 /aaii-router set <key> <value>    write one value without the window
 /aaii-router reset                write the default settings
 /aaii-router next                 take the current candidate out for one cooldown window
+/aaii-router explain              show why the last request went where it went
 /aaii-router reload               rebuild the list after a score or credential change
 ```
 
@@ -338,6 +435,8 @@ not have to be remembered to be used.
 | `PI_AAII_ROUTER_VISION`, `PI_AAII_ROUTER_STATUS` | `on`/`off` (accepts `on`, `true`, `yes`, `1`, `enable`, `enabled` / `off`, `false`, `no`, `0`, `disable`, `disabled`) for the image order and the footer line |
 | `PI_AAII_ROUTER_EXCLUDE_ORIGINS`, `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` | comma separated lists, overriding the file |
 | `PI_AAII_ROUTER_PINNED`, `PI_AAII_ROUTER_EXCLUDE_MODELS` | comma separated `provider/id` lists for the chain order, overriding the file |
+| `PI_AAII_ROUTER_STRATEGY`, `PI_AAII_ROUTER_AFFINITY` | the global distribution strategy and turn affinity, overriding the file |
+| `PI_AAII_ROUTER_GROUPS` | the groups as a JSON array, overriding the file |
 | `PI_CODING_FALLBACK_SCORES` | point at a different AAII snapshot (shared with `coding-fallback`) |
 
 ## What it deliberately does not do
@@ -370,11 +469,30 @@ exclusion, image detection and image ordering, and the step past a failed model.
 `cooldown.test.ts` covers the failure memory with a literal clock: which signals
 are remembered, that an abort and an overflow are not, pruning, that a window
 ends exactly at its end time, that a cooling candidate is skipped while an
-alternative exists and taken when it is the only one left, and the report text.
+alternative exists and taken when it is the only one left, the report text, the
+escalation — a repeated failure inside its window stretches it and counts the
+hits, capped at four windows, and a failure after the window closed starts a
+fresh one — and the three affinities of `chooseTurnCandidate`.
+
+`groups.test.ts` covers the groups: the one `fallback` provider carrying the
+full chain and the two seeded family groups, family membership on the canonical
+key (prefix, suffix and supplier variants in; other versions out), that a family
+group shortens and re-orders the candidate list while `fallback/aaii` keeps the
+full chain, and the entry validation (`aaii` reserved, non-canonical `match`,
+bad strategy and affinity words refused, `name` defaulted).
+
+`strategy.test.ts` covers the distribution strategies: the order each produces
+from the same input, `rotate`'s once-per-turn advance and wrap-around,
+`least-used`'s served counts and tie behaviour, `manual`'s pin-only walk and
+its demotion note when nothing is pinned, and that a strategy only re-orders
+what it is handed — a model excluded upstream stays out of every strategy.
 
 `settings.test.ts` covers the settings: the units a duration is written in, the
 words a toggle is written in, origin normalization, one value refused at a time,
-unknown keys and unreadable values reported rather than guessed, the environment
+unknown keys and unreadable values reported rather than guessed, the strategy
+and affinity words, the groups JSON (a bad entry noted while the good entries
+survive, a repeated id and the reserved `aaii` refused, a non-array refused),
+that `groups` is a redirect setting a project file may not set, the environment
 overriding the file (and a bad override leaving the file's value in force), the
 project merge — a project key applied, a redirect key refused, and a project
 file that names one key leaving the others as the global file left them — the
@@ -402,14 +520,15 @@ keyboard protocol are handled by the SDK; the component tests verify delegation
 to configured cancel bindings using a simple stub, without testing SDK protocol
 parsing or adding custom escape buffering.
 
-`routes.test.ts` covers the registration itself: the three ids under the one
-`fallback` provider, family membership on the canonical key (prefix, suffix and
-supplier variants in; other versions out), and that a family route shortens
-the candidate list while `fallback/aaii` keeps the full chain.
-
-Neither file asserts that any particular model is available today, and no test
-invents a real leaderboard score. The end-to-end path — a session run against
-`fallback/aaii` or a family route recording the physical model it routed to —
-is not covered by a test, because it spends a request.
+`index.test.ts` covers the registration and the command surface through the
+module harness: the ids the factory registers (the full chain plus the seeded
+family groups), the `[aaii-router/<id>] no eligible model` wording per group,
+that `explain` reports the last decision or `no routing decision yet`, the
+status-line form, that a `turn` affinity starts every new turn from the head,
+and the settings/chain writes and their redirects. It does not assert that any
+particular model is available today, and no test invents a real leaderboard
+score. The end-to-end path — a session run against `fallback/aaii` or a family
+group recording the physical model it routed to — is not covered by a test,
+because it spends a request.
 
 점수 경로는 coding-fallback의 `scores.ts`에서 가져오며 `PI_CODING_FALLBACK_SCORES`를 공유합니다. 점수 파일 없음(ENOENT)은 기존처럼 점수 없는 후보의 tier 순서를 허용하지만, 읽기 오류나 깨진 파일은 경로와 이유를 담은 오류로 registry 구성과 라우팅을 중단합니다. 이전의 조용한 tier 라우팅 대체 동작이 변경되었습니다. 설정 파일도 ENOENT만 없음으로 처리하며 다른 읽기 오류는 전파합니다. 깨진 설정 JSON은 기존 계약대로 note와 기본값을 사용합니다. URL 정규화는 coding-fallback/providers.ts를 공유하고, 설정 origin은 http(s)만 허용합니다. 상태 표시는 headless에서 no-op인 SDK UI 계약을 사용합니다.

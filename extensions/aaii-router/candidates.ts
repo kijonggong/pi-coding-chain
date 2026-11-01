@@ -61,6 +61,15 @@ export interface BuildOptions {
 /** The LiteLLM proxy origin: the default, and what the setting starts from. */
 export const DEFAULT_EXCLUDED_ORIGINS: readonly string[] = ["http://127.0.0.1:4000"];
 
+/**
+ * Providers left out by default: routing gateways and resellers, not model
+ * hosts. Sending a request to a router that itself routes puts a detour inside
+ * a chain whose premise is calling providers directly — and this session's
+ * registry proved it, with `magpie/*` entries for models the same suppliers
+ * serve directly. A settings file can add to or replace the list.
+ */
+export const DEFAULT_EXCLUDED_PROVIDERS: readonly string[] = ["magpie", "openrouter"];
+
 export function candidateLabel(model: PhysicalModel): string {
   return `${model.provider}/${model.id}`;
 }

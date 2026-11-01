@@ -19,6 +19,16 @@ import type { Candidate } from "./candidates.ts";
 /** Five minutes, matching the `cooldown_time: 300` of the config this replaces. */
 export const DEFAULT_COOLDOWN_MS = 300_000;
 
+/**
+ * How far repeated failures may stretch one window: a candidate that failed
+ * again inside its own window has its window restarted and its hit count
+ * raised, up to this multiple of the configured window. Beyond it the
+ * candidate stops stretching — it still cools the plain window per failure,
+ * but the memory stops growing, so one bad model cannot bench itself for the
+ * rest of the session.
+ */
+export const COOLDOWN_MAX_STRETCH = 4;
+
 /** Why a request failed, as far as the error text tells us. */
 export type FailureKind = "rate-limit" | "auth" | "error";
 
@@ -29,6 +39,8 @@ export interface CooldownEntry {
   /** Epoch milliseconds at which the candidate becomes usable again. */
   readonly until: number;
   readonly reason: CooldownReason;
+  /** Failures recorded inside one window, for the escalation report. */
+  readonly hits?: number;
 }
 
 export type CooldownMap = Readonly<Record<string, CooldownEntry>>;
@@ -96,6 +108,10 @@ export function coolingFor(
 /**
  * Record a failure. A window of zero or less disables the memory entirely,
  * which is why there is no separate switch for it.
+ *
+ * A failure of a candidate that is already cooling re-opens its window from
+ * now and counts the hit, stretched up to {@link COOLDOWN_MAX_STRETCH} times
+ * the configured window. A failure after the window closed starts a fresh one.
  */
 export function rememberFailure(
   cooldowns: CooldownMap | undefined,
@@ -105,7 +121,11 @@ export function rememberFailure(
   windowMs: number,
 ): CooldownMap {
   if (!(windowMs > 0)) return pruneCooldowns(cooldowns, now);
-  return { ...pruneCooldowns(cooldowns, now), [label]: { until: now + windowMs, reason } };
+  const pruned = pruneCooldowns(cooldowns, now);
+  const current = pruned[label];
+  const hits = (current?.hits ?? 0) + 1;
+  const stretched = Math.min(windowMs * COOLDOWN_MAX_STRETCH, windowMs * hits);
+  return { ...pruned, [label]: { until: now + stretched, reason, hits } };
 }
 
 /** Cooling labels, soonest to expire first, for a report. */
@@ -141,11 +161,35 @@ export interface TurnState {
   readonly epoch?: number;
 }
 
+/** How eagerly a new turn returns to the model the session is on.
+ *
+ * - `auto` (default): the remembered candidate resumes when it is usable —
+ *   the chain only moves on failure.
+ * - `session`: the session stays where failure moved it; a new turn does not
+ *   climb back to the head while the remembered candidate is usable.
+ * - `turn`: every new user turn starts from the head of the order.
+ */
+export type Affinity = "auto" | "session" | "turn";
+
+export const AFFINITIES: readonly Affinity[] = ["auto", "session", "turn"];
+
+export function parseAffinity(value: unknown): Affinity | undefined {
+  return typeof value === "string" && (AFFINITIES as readonly string[]).includes(value)
+    ? (value as Affinity)
+    : undefined;
+}
+
 /**
- * Select the candidate for a new user turn.
- * When the session's recorded epoch differs from the current chainEpoch, the
- * session's remembered label is treated as invalid so the newly configured head
- * is chosen immediately. Old states lacking an epoch continue to be treated as valid.
+ * Select the candidate for a new user turn, under the group's affinity.
+ *
+ * - `auto`: the remembered candidate resumes while it is usable and the chain
+ *   configuration is unchanged (the epoch matches) — the default.
+ * - `session`: the remembered candidate resumes while it is usable, even
+ *   across a chain configuration change; only a usable-now failure moves it.
+ * - `turn`: every new user turn starts from the head of the order.
+ *
+ * When every candidate is cooling, all of them fall back to the head, because
+ * a cooldown must not become "no model available".
  */
 export function chooseTurnCandidate<T extends { label: string }>(
   ordered: readonly T[],
@@ -153,18 +197,16 @@ export function chooseTurnCandidate<T extends { label: string }>(
   state: TurnState | undefined,
   currentEpoch: number,
   now: number,
+  affinity: Affinity = "auto",
 ): T {
   const head = ordered[0];
-  const stateEpoch = state?.epoch;
-  const epochValid = stateEpoch === undefined || stateEpoch === currentEpoch;
-  const remembered = epochValid
-    ? ordered.find((candidate) => candidate.label === state?.label)
-    : undefined;
-  return (
-    (remembered && coolingFor(cooldowns, remembered.label, now) === undefined
-      ? remembered
-      : (preferred(ordered, cooldowns, now) ?? head))
-  );
+  if (affinity === "turn") return preferred(ordered, cooldowns, now) ?? head;
+
+  const epochValid = affinity === "session" || state?.epoch === undefined || state?.epoch === currentEpoch;
+  const remembered = epochValid ? ordered.find((candidate) => candidate.label === state?.label) : undefined;
+  return remembered && coolingFor(cooldowns, remembered.label, now) === undefined
+    ? remembered
+    : (preferred(ordered, cooldowns, now) ?? head);
 }
 
 /**
@@ -195,7 +237,8 @@ export function remainingText(entry: CooldownEntry, now: number): string {
 
 /** The label a candidate is reported under, for the reader of a report. */
 export function describeCooldown(entry: CooldownEntry, now: number): string {
-  return `cooling ${remainingText(entry, now)}, ${entry.reason}`;
+  const repeated = entry.hits === undefined || entry.hits <= 1 ? "" : `, ${entry.hits} failures`;
+  return `cooling ${remainingText(entry, now)}, ${entry.reason}${repeated}`;
 }
 
 /** Candidates paired with their cooldown, for a report. */

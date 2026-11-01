@@ -1,14 +1,21 @@
 /**
  * Pi extension: AAII-ordered fail-over routers that call providers directly.
  *
- * It registers one virtual provider, `fallback`, with three models Pi picks
- * like any other: `fallback/aaii` walks every candidate in the policy order,
- * and `fallback/deepseek-v4.1-flash` and `fallback/glm-5.3-flash` walk only
- * the candidates that serve that model family, keeping the same order, failure
- * memory and stickiness inside the shorter list. For each request a router
- * chooses a physical model from the providers this Pi already has credentials
- * for. When a request fails, Pi retries; the router sees `reason: "retry"` with
- * the model that failed and returns the next one in the order.
+ * It registers one virtual provider, `fallback`, with one model per routing
+ * group: `fallback/aaii` (the full chain, always registered) walks every
+ * candidate in the policy order, and each group in the settings' `groups`
+ * walks only the candidates that serve its model family, keeping the same
+ * order, failure memory and stickiness inside the shorter list. For each
+ * request a router chooses a physical model from the providers this Pi already
+ * has credentials for. When a request fails, Pi retries; the router sees
+ * `reason: "retry"` with the model that failed and returns the next one in the
+ * order.
+ *
+ * On top of the order, each group carries a distribution strategy (`order`,
+ * `free-first`, `rotate`, `least-used`, `manual`) and a turn affinity
+ * (`auto`, `session`, `turn`), set per group or globally, and a model that
+ * fails again inside its cooldown window has that window stretched, capped.
+ * `/aaii-router explain` says why the last request went where it went.
  *
  * The order is the same one the LiteLLM config composer uses: Artificial
  * Analysis Intelligence Index descending first, then the quota tier that
@@ -83,6 +90,7 @@
  *   /aaii-router set <key> <value>   write one setting without the window
  *   /aaii-router reset      write the default settings
  *   /aaii-router next       take the current candidate out for one cooldown window
+ *   /aaii-router explain    show why the last request went where it went
  *   /aaii-router reload     rebuild the list after a score or credential change
  */
 
@@ -115,7 +123,6 @@ import {
   coolingFor,
   coolingLabels,
   describeCooldown,
-  preferred,
   pruneCooldowns,
   rememberFailure,
   remembers,
@@ -139,8 +146,14 @@ import {
 import type { SettingDescriptor, Settings } from "./settings.ts";
 import { loadScores, resolveScoresPath } from "../coding-fallback/scores.ts";
 import type { ScoreSnapshot } from "../coding-fallback/scores.ts";
-import { PROVIDER, ROUTES, candidatesForRoute } from "./routes.ts";
-import type { RouteDefinition } from "./routes.ts";
+import { FULL_CHAIN, PROVIDER, candidatesForGroup } from "./groups.ts";
+import type { GroupDefinition } from "./groups.ts";
+import { applyStrategy, recordServed } from "./strategy.ts";
+import type { Strategy, StrategyState } from "./strategy.ts";
+import { describeDecision, forgetDecision, lastDecision, recordDecision } from "./explain.ts";
+import { consideredList, coolingDescriptions } from "./explain.ts";
+import type { DecisionReason } from "./explain.ts";
+import type { Affinity } from "./cooldown.ts";
 
 const COMMAND = "aaii-router";
 const STATUS_KEY = "aaii-router";
@@ -158,6 +171,8 @@ export interface RouterState {
   cooldowns?: CooldownMap;
   /** Monotonic counter incremented whenever chain configuration changes. */
   epoch?: number;
+  /** Counters the distribution strategy carries between turns. */
+  strategy?: StrategyState;
 }
 
 let chainEpoch = 0;
@@ -186,6 +201,11 @@ let pendingCooldowns: CooldownMap = {};
 let cache: Registry | undefined;
 let settingsCache: Settings | undefined;
 let settingsNotes: readonly string[] = [];
+
+/** The groups this session's `registerVirtualModel` calls created. Membership
+ * and matchers are read from the settings per request; only this set of ids is
+ * fixed at load, because registration runs once. */
+let registeredGroups: readonly GroupDefinition[] = [FULL_CHAIN];
 
 /** The global settings file: what the window and `set` write. */
 function globalSettingsPath(): string {
@@ -290,13 +310,13 @@ function branchSelection(ctx: ExtensionContext | undefined): BranchSelection {
   let routeId: string | undefined;
   for (const entry of [...branch].reverse()) {
     if (entry.type === "model_change" && entry.provider === PROVIDER) {
-      const changed = ROUTES.some((route) => route.id === entry.modelId) ? entry.modelId : undefined;
+      const changed = registeredGroups.some((group) => group.id === entry.modelId) ? entry.modelId : undefined;
       if (changed !== undefined) routeId = changed;
       continue;
     }
     if (entry.type !== "custom" || entry.customType !== VIRTUAL_MODEL_STATE_ENTRY) continue;
     const data = (entry as CustomEntry<VirtualModelStateData<RouterState>>).data;
-    if (data?.provider !== PROVIDER || !ROUTES.some((route) => route.id === data.modelId)) continue;
+    if (data?.provider !== PROVIDER || !registeredGroups.some((group) => group.id === data.modelId)) continue;
     // A model_change after this state switched the session to another route, so
     // the state belongs to a route the session left: the route selection
     // stands, the state does not. Cooling that stale label would bench a model
@@ -416,6 +436,9 @@ async function editSettingDialog(
     ctx.ui.notify(`${COMMAND}: ${edited.reason}`, "error");
     return undefined;
   }
+  // A partially rejected value (a `groups` list with a bad entry) was stored
+  // without the bad parts; the operator must see what did not survive.
+  for (const note of edited.notes ?? []) ctx.ui.notify(`${COMMAND}: ${note}`, "warning");
   return edited.settings;
 }
 
@@ -528,14 +551,21 @@ async function openFallbackEditor(ctx: ExtensionCommandContext): Promise<void> {
   );
 }
 
-export default function (pi: ExtensionAPI) {
-  for (const route of ROUTES) {
+export default async function (pi: ExtensionAPI) {
+  // Groups are a global-only setting: the registration set is decided once,
+  // from the global file and the environment, and a project file is never
+  // consulted here. Every entry already passed `parseGroupsValue` on the way
+  // in, so the parsed list registers as it is.
+  const parsed = await loadSettings({ global: globalSettingsPath() }, process.env);
+  registeredGroups = [FULL_CHAIN, ...parsed.settings.groups];
+
+  for (const group of registeredGroups) {
     pi.registerVirtualModel<RouterState>({
       provider: PROVIDER,
-      id: route.id,
-      name: route.name,
+      id: group.id,
+      name: group.name,
       thinkingLevels: ["off", "minimal", "low", "medium", "high"],
-      route: routeFor(route),
+      route: routeFor(group),
     });
   }
 
@@ -552,6 +582,12 @@ export default function (pi: ExtensionAPI) {
 
       if (subcommand === "reload") {
         forget();
+        return;
+      }
+
+      if (subcommand === "explain") {
+        const described = describeDecision(lastDecision());
+        ctx.ui?.notify?.(described ? `${COMMAND}: ${described}` : `${COMMAND}: no routing decision yet`, "info");
         return;
       }
 
@@ -591,6 +627,10 @@ export default function (pi: ExtensionAPI) {
           ctx.ui?.notify?.(`${COMMAND}: ${edited.reason}`, "error");
           return;
         }
+        // A partially rejected value (a `groups` list with a bad entry) was
+        // stored without the bad parts; the operator must see what did not
+        // survive.
+        for (const note of edited.notes ?? []) ctx.ui?.notify?.(`${COMMAND}: ${note}`, "warning");
         try {
           await commitSettings(
             ctx,
@@ -631,8 +671,8 @@ export default function (pi: ExtensionAPI) {
         // chain's head. Cooling a family-route head from the full chain's head
         // would be a model that route never walks.
         const selection = branchSelection(ctx);
-        const route = ROUTES.find((entry) => entry.id === selection.routeId);
-        const ordered = candidatesForRoute(route ?? ROUTES[0], applyChainSettings(candidates, settings));
+        const group = registeredGroups.find((entry) => entry.id === selection.routeId) ?? registeredGroups[0];
+        const ordered = candidatesForGroup(group, applyChainSettings(candidates, settings));
         const label = selection.state?.label ?? ordered[0]?.label;
         if (!label) {
           ctx.ui?.notify?.(`${COMMAND}: no candidate to step past`, "warning");
@@ -671,25 +711,38 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     forget();
     pendingCooldowns = {};
+    forgetDecision();
     ctx.ui.setStatus(STATUS_KEY, undefined);
   });
 }
 
-/** The tag one route's errors carry. The full-chain route keeps the plain
- * command name; a family route says which family it walks. The discriminator
- * is `family`, the same one the candidate list and the error wording use. */
-function routeTag(route: RouteDefinition): string {
-  return route.family === undefined ? COMMAND : `${COMMAND}/${route.id}`;
+/** The tag one group's errors carry. The full-chain group keeps the plain
+ * command name; a family group says which family it walks. The discriminator
+ * is `match`, the same one the candidate list and the error wording use. */
+function routeTag(group: GroupDefinition): string {
+  return group.match === undefined ? COMMAND : `${COMMAND}/${group.id}`;
+}
+
+/** A group that names its own strategy wins over the global setting. */
+function groupStrategy(group: GroupDefinition, settings: Settings): Strategy {
+  return group.strategy ?? settings.strategy;
+}
+
+/** A group that names its own affinity wins over the global setting. */
+function groupAffinity(group: GroupDefinition, settings: Settings): Affinity {
+  return group.affinity ?? settings.affinity;
 }
 
 /**
- * `route` for one virtual model: the fail-over walk the aaii router has always
- * done, over that route's candidates. The aaii route walks all of them; a
- * family route walks only the candidates `routes.ts` says serve its family,
- * with the same order, failure memory and stickiness inside the shorter list.
+ * `route` for one virtual model: the fail-over walk, over that group's
+ * candidates. The full chain walks all of them in policy order; a family group
+ * walks only the candidates its canonical family key matches, with the same
+ * failure memory and stickiness inside the shorter list. On top of the order,
+ * the group's strategy distributes the requests, and the affinity decides how
+ * eagerly a new turn returns to the model the session is on.
  */
-function routeFor(route: RouteDefinition) {
-  const tag = routeTag(route);
+function routeFor(group: GroupDefinition) {
+  const tag = routeTag(group);
   return async (
     request: ModelRouteRequest<RouterState>,
     ctx: ExtensionContext,
@@ -701,36 +754,92 @@ function routeFor(route: RouteDefinition) {
     const carried = { ...request.state?.cooldowns, ...pendingCooldowns };
     pendingCooldowns = {};
     const cooldowns = pruneCooldowns(carried, now);
-    const ordered = orderForRequest(
-      candidatesForRoute(route, applyChainSettings(candidates, settings)),
-      settings.preferVision && containsImage(request.messages),
+    const strategy = groupStrategy(group, settings);
+    const affinity = groupAffinity(group, settings);
+    const notes: string[] = [];
+
+    const withImage = settings.preferVision && containsImage(request.messages);
+    const visionFirst = orderForRequest(
+      candidatesForGroup(group, applyChainSettings(candidates, settings)),
+      withImage,
     );
+    if (withImage) {
+      const blind = visionFirst.filter((candidate) => !candidate.supportsImages).length;
+      if (blind > 0) notes.push(`${blind} candidate(s) demoted: they cannot see this request's image`);
+    }
+    const distributed = applyStrategy(visionFirst, {
+      strategy,
+      pinnedModels: settings.pinnedModels,
+      state: request.state?.strategy,
+    });
+    // Recomputed on a retry (below): the retry walks the order the failed turn
+    // started from, which only `rotate`'s counter would otherwise change. The
+    // strategy notes go with the order that uses them, so each path pushes its
+    // own.
+    let ordered = distributed.ordered;
+
+    const record = (
+      reason: DecisionReason,
+      chosen: string | undefined,
+      extra: { failed?: string; signal?: string } = {},
+    ) => {
+      const { considered, total } = consideredList(ordered);
+      recordDecision({
+        route: group.id,
+        reason,
+        chosen,
+        failed: extra.failed,
+        signal: extra.signal,
+        considered,
+        total,
+        cooling: coolingDescriptions(cooldowns, ordered, now),
+        notes,
+      });
+    };
 
     const head = ordered[0];
     if (!head) {
+      notes.push(...distributed.notes);
+      record("no eligible model", undefined);
       throw new Error(
         `[${tag}] no eligible model: no chat model with credentials serves ${
-          route.family === undefined ? "the chain" : `the ${route.id} family`
+          group.match === undefined ? "the chain" : `the ${group.match} family`
         }, or the settings excluded it`,
       );
     }
 
-    const stick = (candidate: Candidate, next: CooldownMap, epoch = chainEpoch) => {
+    const stick = (candidate: Candidate, next: CooldownMap, epoch = chainEpoch, strategyState = distributed.state) => {
       const model = resolve(ctx, candidate);
       if (!model) throw new Error(`[${tag}] ${candidate.label} is no longer in the catalog`);
-      publishStatus(ctx, route.id, candidate.label, next, ordered, now, settings.statusLine);
-      return { model, thinkingLevel: request.thinkingLevel, state: { label: candidate.label, cooldowns: next, epoch } };
+      publishStatus(ctx, group.id, candidate.label, next, ordered, now, settings.statusLine);
+      return {
+        model,
+        thinkingLevel: request.thinkingLevel,
+        state: {
+          label: candidate.label,
+          cooldowns: next,
+          epoch,
+          // The one commit point for "this candidate answered": `least-used`
+          // counts the responder here, whatever the reason put it in that seat.
+          strategy: recordServed(candidate, strategy, strategyState),
+        },
+      };
     };
 
     // Never move the chain on a follow-up: keeping the model keeps the prompt cache.
     if (request.reason === "continuation") {
+      notes.push(...distributed.notes);
       const previous = request.previous?.model;
       const sticky = ordered.find(
         (candidate) => candidate.provider === previous?.provider && candidate.id === previous?.id,
       );
-      if (sticky) return stick(sticky, cooldowns, request.state?.epoch ?? chainEpoch);
+      if (sticky) {
+        record("continuation (kept the model)", sticky.label);
+        return stick(sticky, cooldowns, request.state?.epoch ?? chainEpoch, request.state?.strategy ?? distributed.state);
+      }
       const remembered = ordered.find((candidate) => candidate.label === request.state?.label);
-      return stick(remembered ?? head, cooldowns, request.state?.epoch ?? chainEpoch);
+      record("continuation (kept the model)", remembered?.label ?? head.label);
+      return stick(remembered ?? head, cooldowns, request.state?.epoch ?? chainEpoch, request.state?.strategy ?? distributed.state);
     }
     // A failed request: remember why, then step past the model that failed.
     if (request.reason === "retry" && request.failed) {
@@ -738,17 +847,38 @@ function routeFor(route: RouteDefinition) {
       const failedLabel = `${failed.provider}/${failed.id}`;
       const signal = classifyFailure(request.failed.message);
       const next = remembers(signal) ? rememberFailure(cooldowns, failedLabel, signal, now, window) : cooldowns;
+      // Walk the order the failed turn started from, not a new turn's. Only
+      // `rotate`'s order depends on the turn number, and its counter was
+      // advanced for the turn that just failed — rewind it by one before
+      // recomputing; every other strategy recomputes to the same order.
+      const stored = request.state?.strategy ?? {};
+      const retryState =
+        strategy === "rotate" ? { ...stored, turns: stored.turns === undefined ? 0 : stored.turns - 1 } : stored;
+      const retried = applyStrategy(visionFirst, {
+        strategy,
+        pinnedModels: settings.pinnedModels,
+        state: retryState,
+      });
+      ordered = retried.ordered;
+      notes.push(...retried.notes);
       const candidate = stepForward(ordered, next, failedLabel, now);
       if (!candidate) {
+        record("retry after failure", undefined, { failed: failedLabel, signal });
         throw new Error(
           `[${tag}] ${failedLabel} failed and the chain is exhausted after ${ordered.length} candidates`,
         );
       }
-      return stick(candidate, next, chainEpoch);
+      record("retry after failure", candidate.label, { failed: failedLabel, signal });
+      // The rotation state is not advanced here: a retry keeps the turn's
+      // order, so the next user turn is the one that moves the rotation on.
+      return stick(candidate, next, chainEpoch, retried.state);
     }
 
-    // A new user turn, or a request outside the agent loop.
-    const candidate = chooseTurnCandidate(ordered, cooldowns, request.state, chainEpoch, now);
-    return stick(candidate, cooldowns, chainEpoch);
+    // A new user turn, or a request outside the agent loop. The turn takes the
+    // first usable candidate of the strategy order.
+    notes.push(...distributed.notes);
+    const chosen = chooseTurnCandidate(ordered, cooldowns, request.state, chainEpoch, now, affinity);
+    record("fresh turn", chosen.label);
+    return stick(chosen, cooldowns, chainEpoch, distributed.state);
   };
 }
