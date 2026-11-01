@@ -5,7 +5,7 @@
 `docs/engineering-standard.md` 2.9의 “핵심 새 시험은 규칙을 일부러 틀리게 바꿨을 때 실패하는지 한 번 확인하고 원복한다”를 적용했다. 제품 코드와 시험은 수정하지 않았으며, 원본 저장소에는 이 보고서만 추가했다. 전체 저장소를 `.git`만 제외하고 `robocopy /E /XD .git`으로 OS 임시 디렉터리에 복사했다.
 
 - 작업일: 2026-10-24.
-- 복사본: `C:/Users/airgu/AppData/Local/Temp/aaii-mutation-485edfec-3a5b-44c0-8ea4-78303d95a886` (검사 완료 후 삭제).
+- 복사본: `~/<temp>/aaii-mutation-485edfec-3a5b-44c0-8ea4-78303d95a886` (검사 완료 후 삭제).
 - 기준 명령: `node --test extensions/aaii-router/*.test.ts extensions/coding-fallback/chain.test.ts extensions/coding-fallback/free-models.test.ts`.
 - 원본 및 복사본 최초 결과: 각각 **111 tests / 109 pass / 0 fail / 2 skipped**. 두 skip은 `PI_CODING_FALLBACK_LIVE_TESTS=1`이 필요한 실제 사용자 설정 검사다.
 - 각 변이는 한 소스 줄만 바꿨다. `node --test --test-reporter=tap <관련 시험 파일>`로 해당 파일 전체를 실행하고 종료 코드와 `not ok` 시험명을 기록한 뒤, `finally`에서 그 파일의 원래 바이트를 복구했다. 여러 변이를 누적하지 않았다.

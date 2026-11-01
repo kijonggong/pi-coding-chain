@@ -2,7 +2,7 @@
 
 ## 범위와 선행 확인
 
-`engineering-standard` 스킬을 `C:/Users/airgu/.agents/skills/engineering-standard/SKILL.md`에서 불러왔고, 그 `references/standard.md`, 저장소 `docs/engineering-standard.md`를 전부 읽었다. `_research/standard-disposition-iron-laws.md`의 재리뷰 반영 절과 `_research/standard-rereview-iron-laws.md`를 읽고 해당 처분을 구현했다. 시작 시 이미 여러 확장과 정본에 미커밋 변경 및 조사 파일이 있었다. 그 변경을 되돌리지 않았으며 아래 수정과 요청받은 이 보고서만 작성했다.
+`engineering-standard` 스킬을 `~/.agents/skills/engineering-standard/SKILL.md`에서 불러왔고, 그 `references/standard.md`, 저장소 `docs/engineering-standard.md`를 전부 읽었다. `_research/standard-disposition-iron-laws.md`의 재리뷰 반영 절과 `_research/standard-rereview-iron-laws.md`를 읽고 해당 처분을 구현했다. 시작 시 이미 여러 확장과 정본에 미커밋 변경 및 조사 파일이 있었다. 그 변경을 되돌리지 않았으며 아래 수정과 요청받은 이 보고서만 작성했다.
 
 제품·시험 수정 파일: `extensions/aaii-router/index.ts`, `index.test.ts`, `settings.test.ts`, `README.md`. 소유 범위의 `settings.ts`는 수정할 필요가 없었다. 커밋·stash·reset·checkout·revert, 네트워크·유료 호출 및 금지된 개인 설정 파일 접근은 하지 않았다.
 

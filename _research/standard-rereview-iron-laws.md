@@ -1,4 +1,4 @@
-engineering-standard 스킬을 `C:/Users/airgu/.agents/skills/engineering-standard`에서 불러왔고, 같은 경로의 `references/standard.md`와 저장소 `docs/engineering-standard.md`를 각각 전부 읽었다.
+engineering-standard 스킬을 `~/.agents/skills/engineering-standard`에서 불러왔고, 같은 경로의 `references/standard.md`와 저장소 `docs/engineering-standard.md`를 각각 전부 읽었다.
 
 # Iron Laws 수정 재리뷰
 
