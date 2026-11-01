@@ -1,5 +1,16 @@
 # aaii-router
 
+<div align="center">
+
+**Routing groups for [Pi](https://github.com/badlogic/pi-mono) — fail-over,
+distribution strategies, session affinity, and an explain button.**
+
+`pi install git:github.com/kijonggong/pi-coding-chain@main`
+
+</div>
+
+---
+
 A Pi extension that registers routing groups as virtual models under a
 `fallback` provider. `fallback/aaii` is always there: it walks every candidate
 the providers this Pi already has credentials for, in the policy order, and
