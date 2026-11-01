@@ -62,13 +62,27 @@ export interface BuildOptions {
 export const DEFAULT_EXCLUDED_ORIGINS: readonly string[] = ["http://127.0.0.1:4000"];
 
 /**
- * Providers left out by default: routing gateways and resellers, not model
- * hosts. Sending a request to a router that itself routes puts a detour inside
- * a chain whose premise is calling providers directly — and this session's
- * registry proved it, with `magpie/*` entries for models the same suppliers
- * serve directly. A settings file can add to or replace the list.
+ * Providers left out by default: none. A gateway's ordinary entries are
+ * ordinary models — the request is answered by the supplier it names — so
+ * excluding a whole provider would bench models the chain can use. What the
+ * default drops is the routing-feature *models* themselves, by id, in
+ * {@link isRouterModelId}. A settings file can still exclude a provider.
  */
-export const DEFAULT_EXCLUDED_PROVIDERS: readonly string[] = ["magpie", "openrouter"];
+export const DEFAULT_EXCLUDED_PROVIDERS: readonly string[] = [];
+
+/**
+ * Whether a model id is itself a routing feature rather than a model: an
+ * aggregator's auto router (`openrouter/auto`, `kilo/auto` — the last path
+ * segment is `auto`), a bare or prefixed router id (`auto/…`, `router/…`), or
+ * a routing-group entry (`group/…`, as Magpie serves them). The chain calls
+ * model hosts, so a candidate that would re-enter another router is dropped
+ * at the model level — the provider it lives under stays eligible.
+ */
+export function isRouterModelId(id: string): boolean {
+  const key = id.split(":")[0].toLowerCase();
+  const last = key.split("/").pop() ?? key;
+  return last === "auto" || key.startsWith("auto/") || key.startsWith("group/") || key.startsWith("router/");
+}
 
 export function candidateLabel(model: PhysicalModel): string {
   return `${model.provider}/${model.id}`;
@@ -102,6 +116,7 @@ export function eligibleModels(
   for (const model of models) {
     const label = candidateLabel(model);
     if (seen.has(label)) continue;
+    if (isRouterModelId(model.id)) continue;
     const origin = parseProviderUrl(model.baseUrl)?.origin;
     if (origin !== undefined && excluded.has(origin)) continue;
     if (excludedProviders.has(model.provider)) continue;

@@ -151,6 +151,24 @@ test("excludes models served through the LiteLLM proxy", () => {
   assert.equal(kept.length, 2);
 });
 
+test("drops the routing-feature models, under any provider, and keeps the ordinary ones", () => {
+  const all = [
+    model("openrouter", "auto", FREE_HOST),
+    model("kilo", "auto", FREE_HOST),
+    model("magpie", "auto/glm-5.3-flash", FREE_HOST),
+    model("magpie", "group/deepseek-v4.1-flash-fallback", FREE_HOST),
+    model("anything", "router/auto", FREE_HOST),
+    model("openrouter", "deepseek/deepseek-v4.1-flash", FREE_HOST),
+    model("magpie", "river/zai-org/GLM-5.3-Flash", FREE_HOST),
+  ];
+  // The gateways stay — what leaves is every id that is itself a router:
+  // a bare or trailing `auto`, `auto/…`, `group/…`, `router/…`.
+  assert.deepEqual(eligibleModels(all).map(candidateLabel), [
+    "openrouter/deepseek/deepseek-v4.1-flash",
+    "magpie/river/zai-org/GLM-5.3-Flash",
+  ]);
+});
+
 test("excludes a provider the settings leave out, whatever the model", () => {
   const all = [model("openrouter", "alpha-model", FREE_HOST), model("p", "beta-model", DAILY_HOST)];
   assert.deepEqual(

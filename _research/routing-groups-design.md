@@ -4,22 +4,19 @@
 입력: `_research/routing-extension-survey.md` (채택 처분), `_research/magpie-tui-reference.md`,
 사용자 요구 — "Magpie의 routing 기능을, 기존 카탈로그 모델을 **자동으로** 라우팅하는 형태로."
 
-## 0. 추가 설계 (11-01): aggregator 공급자 기본 제외
+## 0. 추가 설계 (11-01): 라우터 모델 후보 제외
 
-사용자 결정 — "Magpie, openrouter 같은 공급자(다른 라우터·중개자)의 모델은 이 체인의 후보에서
-제외한다." 판정:
+사용자 결정 — 라우팅 기능이 있는 모델(`openrouter/auto`, `kilo/auto`, Magpie의
+`auto/…`·`group/…`)은 이 체인의 후보에서 빠진다. 판정의 재판정 이력:
 
-- **책임 소재**: candidates.ts의 `DEFAULT_EXCLUDED_PROVIDERS`(신설 상수)가 단일 출처.
-  `DEFAULT_SETTINGS.excludedProviders`가 그것을 재사용 — 설정 파일이 출처를 덮어쓴다
-  (빈 배열을 쓰면 되돌릴 수 있다).
-- **대상**: `magpie`(라우팅 게이트웨이), `openrouter`(중개자). 근거: 이 체인은 "공급자 직행"이
-  전제(README "providers direct")이고, 라우터를 라우터의 후보로 넣는 건 우회다. 이번 실물
-  검증에서 후보 42개 중 다수가 `magpie/*`였다는 실측이 요구의 계기.
-- **의미 변경**: 기본 후보 집합이 줄어든다. 기존 사용자가 magpie/openrouter를 쓰고 있었다면
-  라이브 설정의 `providers`에 명시적으로 되돌려야 한다 — 시험·README 갱신 대상.
-- 라이브 설정(`~/.pi/agent/aaii-router.json`)은 이미 cline·dashscope·experientiallabs·
-  openrouter·qwen-remote를 제외 중 — 거기에 magpie를 **사용자 설정으로** 추가하고, 기본값
-  변경은 저장소의 기본값으로 한다.
+- 1차(§9.9에서 구현): 공급자 단위 기본 제외(`magpie`, `openrouter`). **재판정으로 폐기** —
+  Magpie의 일반 항목(`magpie/river/…`)은 그 공급자의 그 모델이 응답하는 실제 모델이라
+  공급자 전체 제외는 쓸 수 있는 모델을 벤치하는 과잉이었다(2.7 과잉 방어에 해당).
+- 최종: 공급자 기본 제외 없음(`DEFAULT_EXCLUDED_PROVIDERS = []`), 라우터 **모델**만
+  `isRouterModelId`(마지막 세그먼트가 `auto`, 또는 `auto/…`·`group/…`·`router/…` 접두)로
+  id 단위 제외 — 단일 출처는 candidates.ts. 실제 근거: Magpie의 분산(smart/rotate)은
+  이 확장이 직접 갖춘 전략·친화도와 정확히 겹치므로 이중 라우팅은 가치가 없다.
+- 설정 파일의 `providers`로 공급자 제외도 여전히 가능(연산자 결정).
 
 ## 1. 책임 배치 (바뀐 뒤 누가 무엇을 소유하는가)
 

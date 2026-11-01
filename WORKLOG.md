@@ -332,3 +332,20 @@ magpie/nvidia), family 그룹은 42 후보를 glm family 7개로 단축, manual�
 - 시험: settings.test.ts의 기본값 단정을 새 계약으로 갱신(완화 아님) — 291개 중 291개 통과.
 - README: 설정 표의 `providers` 기본값·이유 갱신.
 - 의미 변경: 기본 후보 집합이 줄어든다. magpie/openrouter를 쓰던 세션은 설정으로 되돌려야 한다.
+
+### 9.10 제외 기준의 정밀화: 공급자가 아니라 라우터 모델 (11-01)
+
+사용자 결정의 재판정 — 제외 대상은 "라우팅 기능을 가진 공급자"가 아니라 **"스스로 라우팅하는
+모델"**이다. Magpie의 일반 항목(`magpie/river/…`, `magpie/zcode/…`)은 그 공급자의 그 모델이
+응답하는 실제 모델이고, 실물 검증(§9.9)에서 응답 모델이 턴마다 바뀐 것도 이 확장의 rotate
+때문이지 Magpie의 분산 때문이 아니었다. 공급자 전체 제외는 쓸 수 있는 모델을 벤치하는 과잉이었다.
+
+- 더한 것: `candidates.ts`의 `isRouterModelId` — 마지막 세그먼트가 `auto`(`openrouter/auto`,
+  `kilo/auto`)이거나 `auto/…`·`group/…`·`router/…`로 시작하는 id를 공급자 무관하게 후보에서
+  떨어뜨린다. eligibleModels의 필터 한 줄. 시험 1건(candidates.test.ts — 7케이스).
+- 뺀 것: `DEFAULT_EXCLUDED_PROVIDERS = ["magpie", "openrouter"]` (§9.9의 기본값 — 대체됨,
+  빈 배열로). 공급자 기본 제외는 없다. §9.9의 "aggregator 기본 제외" 설계는 §0에 부록으로
+  남기고 본문 판정을 이 절로 갱신(2.8 의미 변경의 이력 보존).
+- 라이브 설정: `providers`에서 `magpie`·`openrouter` 제거(백업 §9.9 것 유지). cline·
+  dashscope·experientiallabs·qwen-remote만 남음 — 이들은 이미 다른 이유로 뺀 것.
+- 시험: 292개 중 292개 통과. README 설정 표의 `providers` 행 갱신.

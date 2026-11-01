@@ -299,7 +299,7 @@ from the operator's configuration, not from a table in the extension.
 | `vision` — put candidates that can see an image ahead of ones that cannot | `on` | `PI_AAII_ROUTER_VISION` |
 | `status` — footer line with the active candidate and the cooling count | `on` | `PI_AAII_ROUTER_STATUS` |
 | `origins` — origins no candidate may use | the LiteLLM proxy | `PI_AAII_ROUTER_EXCLUDE_ORIGINS` |
-| `providers` — providers to leave out of the chain | `magpie`, `openrouter` (routing gateways and resellers — this chain calls model hosts directly; an empty value re-admits every provider) | `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` |
+| `providers` — providers to leave out of the chain | none (routing-feature *models* — `…/auto`, `group/…`, `router/…` — are dropped by id instead, whichever provider serves them; `magpie` ordinary entries are real supplier models and stay) | `PI_AAII_ROUTER_EXCLUDE_PROVIDERS` |
 | `models` — limit a provider to the `provider/id` entries listed for it | none | `PI_AAII_ROUTER_ALLOW_MODELS` |
 | `pinned` — candidate labels to try first, in this order (`provider/id`) | none | `PI_AAII_ROUTER_PINNED` |
 | `excluded` — candidate labels to leave out of the chain (`provider/id`) | none | `PI_AAII_ROUTER_EXCLUDE_MODELS` |

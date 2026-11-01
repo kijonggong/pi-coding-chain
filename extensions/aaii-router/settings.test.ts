@@ -43,9 +43,10 @@ test("a fresh install has every setting at its default", () => {
   assert.deepEqual(resolveSettings({}), { settings: DEFAULT_SETTINGS, notes: [], applied: [] });
   assert.equal(DEFAULT_SETTINGS.cooldownMs, DEFAULT_COOLDOWN_MS);
   assert.deepEqual(DEFAULT_SETTINGS.excludedOrigins, ["http://127.0.0.1:4000"]);
-  // The chain calls model hosts directly: routing gateways and resellers
-  // (magpie, openrouter) are out by default, and a settings file can re-admit them.
-  assert.deepEqual(DEFAULT_SETTINGS.excludedProviders, ["magpie", "openrouter"]);
+  // No provider is excluded by default: a gateway's ordinary entries are
+  // ordinary models. The routing-feature *models* are dropped by id instead
+  // (isRouterModelId, covered in candidates.test.ts).
+  assert.deepEqual(DEFAULT_SETTINGS.excludedProviders, []);
   assert.equal(DEFAULT_SETTINGS.excludedProviders, DEFAULT_EXCLUDED_PROVIDERS);
 });
 
